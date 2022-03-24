@@ -1,32 +1,41 @@
-* {box-sizing: border-box;}
-
-#root {
-  width: 100vw;
-  height: 100vh;
-  padding: 0 !important;
-}
-
 .whiteboard {
   background-color: rgb(244, 245, 255);
   background-size: 40px 40px;  
+  letter-spacing: 0.6px;
+  font-family: Arial;
 }
 
 .canvas-container {width: 100% !important; height: 100% !important;}
 
-.tools {  
+.top-menu button {
+  padding: 0 !important;
+}
+
+.top-menu>* {
+  background-color: #fff;
+  padding: 7px 12px;
+  margin: 7px;
+  font-size: 18px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 24%), 1px 1px 5px rgb(0 0 0 / 22%);
+}
+
+.top-menu:last-child {
+  border: 0;
+}
+
+.toolbar {  
   position: fixed;
   left: 10px;
   top: 50%;
   transform: translate(0, -50%);
   display: flex;
   flex-direction: column;
-  background-color: #fff;  
-  border-radius: 7px;
-  overflow: hidden;
+  background-color: #fff;
   z-index: 99999;
 }
 
-.menu {  
+.bottom-menu {  
   position: fixed;
   left: 50%;
   bottom: 10px;
@@ -48,6 +57,15 @@
 }
 
 button:hover {opacity: 0.8;}
+
+input[type="number"] {
+  width: 60px;
+  padding: 0;
+  text-align: center;
+  border: 0;
+  outline: none;
+  font-size: 16px;
+}
 
 .shadow {box-shadow: 0 0 0 1px rgb(255 255 255 / 24%), 1px 1px 5px rgb(0 0 0 / 22%);}
 

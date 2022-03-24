@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { fabric } from './FabricHistory';
+import Dropdown from './Dropdown';
+import { fabric } from './FabricExtended';
 import ArrowIcon from './icons/ArrowIcon';
 import CircleIcon from './icons/CircleIcon';
 import EraseIcon from './icons/EraseIcon';
@@ -18,6 +19,12 @@ import TextIcon from './icons/TextIcon';
 import TrashIcon from './icons/TrashIcon';
 import TriangleIcon from './icons/TriangleIcon';
 import UndoIcon from './icons/UndoIcon';
+import { RgbaStringColorPicker } from "react-colorful";
+import PaletteIcon from './icons/PaletteIcon';
+import PaintBucketIcon from './icons/PaintBucketIcon';
+import GeometryIcon from './icons/GeometryIcon';
+import './Whiteboard.css';
+import FontSizeIcon from './icons/FontSizeIcon';
 
 interface IProps {
   className?: string,
@@ -68,7 +75,7 @@ export function Whiteboard({ className, options }: IProps) {
     }
   }, [])
 
-  const onAddShape = (objName: string) => {
+  const onToolbar = (objName: string) => {
     let objType;
 
     switch (objName) {
@@ -85,7 +92,7 @@ export function Whiteboard({ className, options }: IProps) {
 
       case 'text':
         editor.isDrawingMode = false;
-        objType = new fabric.Textbox('Hello world', { fontSize: objOptions.fontSize });
+        objType = new fabric.Textbox('Your text here', { fontSize: objOptions.fontSize });
         break;
 
       case 'circle':
@@ -121,7 +128,7 @@ export function Whiteboard({ className, options }: IProps) {
 
       case 'line':
         editor.isDrawingMode = false;
-        objType = new fabric.Line([50, 10, 200, 150], { ...objOptions });
+        objType = new fabric.Line([50, 10, 200, 150], { ...objOptions, angle: 47 });
         break;
 
       case 'image':
@@ -129,8 +136,15 @@ export function Whiteboard({ className, options }: IProps) {
         break;
 
       case 'sticky':
-        editor.isDrawingMode = false;
-        objType = new fabric.Rect({ ...objOptions, width: 100, height: 100 });
+        // objType = new fabric.TextboxWithPadding('Your text here', {
+        //   backgroundColor: '#8bc34a',
+        //   fill: '#fff',
+        //   width: 150,
+        //   textAlign: 'left',
+        //   splitByGrapheme: true,
+        //   height: 150,
+        //   padding: 20
+        // });
         break;
 
       default:
@@ -143,9 +157,9 @@ export function Whiteboard({ className, options }: IProps) {
 
     if (objName !== 'draw' && objName !== 'select') {
       editor.add(objType);
+      editor.centerObject(objType);
     }
 
-    editor.centerObject(objType);
     editor.renderAll();
   }
 
@@ -225,6 +239,17 @@ export function Whiteboard({ className, options }: IProps) {
     }
   }
 
+  const onColorChange = (value: any, name: string) => {
+    const activeObj = editor.getActiveObject();
+
+    if (activeObj) {
+      const ops = { ...objOptions, [name]: value };
+      activeObj.set(name, value);
+      setObjOptions(ops);
+      editor.renderAll()
+    }
+  }
+
   const onOptionsChange = (e: any) => {
     let val = e.target.value;
     const name = e.target.name;
@@ -251,48 +276,48 @@ export function Whiteboard({ className, options }: IProps) {
     e.stopPropagation();
   }
 
-  return (<div className={'whiteboard ' + className} style={{ backgroundImage: showGrid ? backgroundImage : '' }} ref={parentRef}>
+  return (<div className={'w-100 h-100 whiteboard ' + className} style={{ backgroundImage: showGrid ? backgroundImage : '' }} ref={parentRef}>
     {showObjOptions && <div className='w-100 d-flex justify-center'
-      style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999, overflow: 'hidden' }}>
-      <div className='d-flex bg-white br7 shadow py-1 pr-1 pl-1'>
-        <div>
-          <label>Font Size</label>
+      style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999 }}>
+      <div className='top-menu d-flex'>
+        <div className='d-flex align-center'>
+          <label><FontSizeIcon /></label>
           <input type="number" min="1" name='fontSize' onChange={onOptionsChange} defaultValue="22" />
         </div>
 
-        <div>
-          <label>strokeWidth</label>
+        <div className='d-flex align-center'>
+          <label>Stroke</label>
           <input type="number" min="1" name='strokeWidth' onChange={onOptionsChange} defaultValue="3" />
         </div>
 
-        <div className='d-flex mr-1'>
-          <div>stroke</div>
-          <input type="color" name='stroke' onChange={onOptionsChange} defaultValue="#000" />
-        </div>
+        <Dropdown title={<PaletteIcon />}>
+          <RgbaStringColorPicker onChange={(color) => { onColorChange(color, 'stroke') }} />
+        </Dropdown>
 
-        <div className='d-flex mr-1'>
-          <div>background</div>
-          <input type="color" name='fill' onChange={onOptionsChange} defaultValue="#000" />
-        </div>
+        <Dropdown title={<PaintBucketIcon />}>
+          <RgbaStringColorPicker onChange={(color) => { onColorChange(color, 'fill') }} />
+        </Dropdown>
       </div>
     </div>}
 
-    <div className='tools shadow'>
-      <button onClick={() => { onAddShape('select') }} title="Hand"><HandIcon /></button>
-      <button onClick={() => { onAddShape('draw') }} title="Pen"><PenIcon /></button>
-      <button onClick={() => { onAddShape('sticky') }} title="Add Sticky"><StickyIcon /></button>
-      <button onClick={() => { onAddShape('arrow') }} title="Add Arrow"><ArrowIcon /></button>
-      <button onClick={() => { onAddShape('line') }} title="Add Line"><LineIcon /></button>
-      <button onClick={() => { onAddShape('circle') }} title="Add Circle"><CircleIcon /></button>
-      <button onClick={() => { onAddShape('rect') }} title="Add Rectangle"><RectIcon /></button>
-      <button onClick={() => { onAddShape('triangle') }} title="Add Triangle"><TriangleIcon /></button>
-      <button onClick={() => { onAddShape('text') }} title="Add Text"><TextIcon /></button>
-      <button onClick={() => { onAddShape('image') }} title="Add Image"><ImageIcon /></button>
+    <div className='toolbar shadow br-7'>
+      <button onClick={() => { onToolbar('select') }} title="Hand"><HandIcon /></button>
+      <button onClick={() => { onToolbar('draw') }} title="Pen"><PenIcon /></button>
+      <button onClick={() => { onToolbar('text') }} title="Add Text"><TextIcon /></button>
+      <button onClick={() => { onToolbar('sticky') }} title="Add Sticky"><StickyIcon /></button>
+      <button onClick={() => { onToolbar('arrow') }} title="Add Arrow"><ArrowIcon /></button>
+      <button onClick={() => { onToolbar('line') }} title="Add Line"><LineIcon /></button>
+      <Dropdown title={<GeometryIcon />}>
+        <button onClick={() => { onToolbar('circle') }} title="Add Circle"><CircleIcon /></button>
+        <button onClick={() => { onToolbar('rect') }} title="Add Rectangle"><RectIcon /></button>
+        <button onClick={() => { onToolbar('triangle') }} title="Add Triangle"><TriangleIcon /></button>
+      </Dropdown>
+      <button onClick={() => { onToolbar('image') }} title="Add Image"><ImageIcon /></button>
     </div>
 
     <canvas ref={canvasRef} className='canvas' />
 
-    <div className='w-100 menu'>
+    <div className='w-100 bottom-menu'>
       <div className='d-flex align-center bg-white br-7 shadow pr-1 pl-1'>feedback</div>
 
       <div className='d-flex align-center bg-white br-7 shadow'>

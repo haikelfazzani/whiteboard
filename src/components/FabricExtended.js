@@ -99,4 +99,22 @@ fabric.Canvas.prototype.clearHistory = function () {
   this.fire('history:clear');
 }
 
-export {fabric};
+fabric.TextboxWithPadding = fabric.util.createClass(fabric.Textbox, {
+  _renderBackground: function (ctx) {
+    if (!this.backgroundColor) return;
+    
+    let dim = this._getNonTransformedDimensions();
+    ctx.fillStyle = this.backgroundColor;
+
+    ctx.fillRect(
+      -dim.x / 2 - this.padding,
+      -dim.y / 2 - this.padding,
+      dim.x + this.padding * 2,
+      dim.y + this.padding * 2
+    );
+    
+    this._removeShadow(ctx);
+  }
+});
+
+export { fabric };
