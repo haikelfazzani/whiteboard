@@ -7,5 +7,5 @@ import './Whiteboard.css';
 export default { title: 'Whiteboard', component: Whiteboard } as ComponentMeta<typeof Whiteboard>;
 
 export const C: ComponentStory<typeof Whiteboard> = () => {
-  return <Whiteboard className='w-100 h-100 bg-dark container' />
+  return <Whiteboard className='w-100 h-100' />
 }

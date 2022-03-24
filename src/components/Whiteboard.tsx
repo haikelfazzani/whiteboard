@@ -106,7 +106,7 @@ export function Whiteboard({ className, options }: IProps) {
     }
   }
 
-  return (<div className={className} ref={parentRef}>
+  return (<div className={'whiteboard ' + className} ref={parentRef}>
     <div className='w-100 d-flex justify-between'>
       <div>
         <button onClick={() => { onAddShape('select') }}>hand</button>
