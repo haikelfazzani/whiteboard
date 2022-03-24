@@ -1,0 +1,14 @@
+.w-100 {width: 100%;}
+.h-100 {height: 100%;}
+
+.container {
+  width: 700px !important;
+  height: 450px !important;
+  background-color: #fff;
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right,#dfdfdf 1px,transparent 1px),
+    linear-gradient(to bottom,#dfdfdf 1px,transparent 1px)
+}
+
+.d-flex {display: flex;}
+.justify-between {justify-content: space-between;}
