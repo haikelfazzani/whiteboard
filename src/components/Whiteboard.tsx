@@ -5,6 +5,7 @@ import CircleIcon from './icons/CircleIcon';
 import EraseIcon from './icons/EraseIcon';
 import ExportIcon from './icons/ExportIcon';
 import FlopIcon from './icons/FlopIcon';
+import GridIcon from './icons/GridIcon';
 import HandIcon from './icons/HandIcon';
 import ImageIcon from './icons/ImageIcon';
 import JsonIcon from './icons/JsonIcon';
@@ -14,6 +15,7 @@ import RectIcon from './icons/RectIcon';
 import RedoIcon from './icons/RedoIcon';
 import StickyIcon from './icons/StickyIcon';
 import TextIcon from './icons/TextIcon';
+import TrashIcon from './icons/TrashIcon';
 import TriangleIcon from './icons/TriangleIcon';
 import UndoIcon from './icons/UndoIcon';
 
@@ -21,6 +23,8 @@ interface IProps {
   className?: string,
   options?: object
 }
+
+const backgroundImage = 'linear-gradient(to right,#dfdfdf 1px,transparent 1px),linear-gradient(to bottom,#dfdfdf 1px,transparent 1px)';
 
 export function Whiteboard({ className, options }: IProps) {
   const parentRef = useRef<any>();
@@ -37,12 +41,14 @@ export function Whiteboard({ className, options }: IProps) {
 
   const [showObjOptions, setShowObjOptions] = useState<boolean>(false);
 
+  const [showGrid, setShowGrid] = useState<boolean>(true);
+
   useEffect(() => {
     const canvas = new fabric.Canvas(canvasRef?.current, canvasOptions);
     setEditor(canvas);
 
     if (parentRef && parentRef.current && canvas) {
-      const data = localStorage.getItem('react-fabric');
+      const data = localStorage.getItem('whiteboard-cache');
       if (data) {
         canvas.loadFromJSON(JSON.parse(data), canvas.renderAll.bind(canvas));
       }
@@ -143,7 +149,7 @@ export function Whiteboard({ className, options }: IProps) {
     editor.renderAll();
   }
 
-  const onMenu = (actionName: string) => {
+  const onBottomMenu = (actionName: string) => {
     switch (actionName) {
       case 'export':
         const image = editor.toDataURL("image/png").replace("image/png", "image/octet-stream");
@@ -151,13 +157,12 @@ export function Whiteboard({ className, options }: IProps) {
         break;
 
       case 'save':
-        localStorage.setItem('react-fabric', JSON.stringify(editor.toDatalessJSON()))
+        localStorage.setItem('whiteboard-cache', JSON.stringify(editor.toDatalessJSON()))
         break;
 
       case 'erase':
         const activeObject = editor.getActiveObject();
-
-        if (activeObject && confirm('Are you sure?')) {
+        if (activeObject) {
           editor.remove(activeObject);
         }
         break;
@@ -179,6 +184,18 @@ export function Whiteboard({ className, options }: IProps) {
 
       case 'redo':
         editor.redo()
+        break;
+
+      case 'bg-grid':
+        setShowGrid(!showGrid)
+        break;
+
+      case 'clear':
+        if (confirm('Are you sure to reset the whiteboard?')) {
+          localStorage.removeItem('whiteboard-cache')
+          editor.clearHistory();
+          editor.clear();
+        }
         break;
 
       default:
@@ -225,18 +242,16 @@ export function Whiteboard({ className, options }: IProps) {
   }
 
   const onZoom = (e: any) => {
-    //editor.setZoom(+e.target.value);
     editor.zoomToPoint(new fabric.Point(editor.width / 2, editor.height / 2), +e.target.value);
-    var units = 10;
-    var delta = new fabric.Point(units, 0);
+    const units = 10;
+    const delta = new fabric.Point(units, 0);
     editor.relativePan(delta);
 
     e.preventDefault();
     e.stopPropagation();
   }
 
-  return (<div className={'whiteboard ' + className} ref={parentRef}>
-
+  return (<div className={'whiteboard ' + className} style={{ backgroundImage: showGrid ? backgroundImage : '' }} ref={parentRef}>
     {showObjOptions && <div className='w-100 d-flex justify-center'
       style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999, overflow: 'hidden' }}>
       <div className='d-flex bg-white br7 shadow py-1 pr-1 pl-1'>
@@ -281,12 +296,14 @@ export function Whiteboard({ className, options }: IProps) {
       <div className='d-flex align-center bg-white br-7 shadow pr-1 pl-1'>feedback</div>
 
       <div className='d-flex align-center bg-white br-7 shadow'>
-        <button onClick={() => { onMenu('erase') }} title="Eraser"><EraseIcon /></button>
-        <button onClick={() => { onMenu('undo') }} title="Undo"><RedoIcon /></button>
-        <button onClick={() => { onMenu('redo') }} title="Redo"><UndoIcon /></button>
-        <button onClick={() => { onMenu('save') }} title="Save"><FlopIcon /></button>
-        <button onClick={() => { onMenu('export') }} title="Export PNG"><ExportIcon /></button>
-        <button onClick={() => { onMenu('toJson') }} title="Export Json"><JsonIcon /></button>
+        <button onClick={() => { onBottomMenu('bg-grid') }} title="Grid"><GridIcon /></button>
+        <button onClick={() => { onBottomMenu('erase') }} title="Eraser"><EraseIcon /></button>
+        <button onClick={() => { onBottomMenu('undo') }} title="Undo"><RedoIcon /></button>
+        <button onClick={() => { onBottomMenu('redo') }} title="Redo"><UndoIcon /></button>
+        <button onClick={() => { onBottomMenu('save') }} title="Save"><FlopIcon /></button>
+        <button onClick={() => { onBottomMenu('export') }} title="Export PNG"><ExportIcon /></button>
+        <button onClick={() => { onBottomMenu('toJson') }} title="Export Json"><JsonIcon /></button>
+        <button onClick={() => { onBottomMenu('clear') }} title="Reset"><TrashIcon /></button>
       </div>
 
       <select className='d-flex align-center bg-white br-7 shadow border-0 pr-1 pl-1' onChange={onZoom} defaultValue="1">

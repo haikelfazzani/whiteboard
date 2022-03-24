@@ -99,13 +99,4 @@ fabric.Canvas.prototype.clearHistory = function () {
   this.fire('history:clear');
 }
 
-fabric.Canvas.prototype.offHistory = function () {
-  this.historyProcessing = true;
-}
-
-fabric.Canvas.prototype.onHistory = function () {
-  this.historyProcessing = false;
-  this._historySaveAction();
-}
-
 export {fabric};
