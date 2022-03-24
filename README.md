@@ -1,30 +1,25 @@
-# React Draggable Component
-A simple component for making elements draggable.
+# React whiteboard
+A simple whiteboard component.
 
-### [Demo](https://haikelfazzani.github.io/react-fabric/)
-### [stackblitz](https://react-ts-qvltmc.stackblitz.io)
+### [Demo](https://haikelfazzani.github.io/whiteboard/)
 
 # Installation
 ```shell
-$ npm install react-fabric
-# yarn add react-fabric
+$ npm install whiteboard-react
+# yarn add whiteboard-react
 ```
 
 # Example
 ```jsx
-import { Draggable } from 'react-fabric';
+import { Whiteboard } from 'whiteboard-react';
 
-<Draggable>
-  <div>My element is draggable now</div>
-</Draggable>
+<Whiteboard />
 ```
 
 ### Props
 | name | type | default | description |
 | --- | --- | --- | --- |
-| children | `any` | empty | `Component or HTMLElement` |
-| className | `string` | `'react-fabric'` | class name |
-| style | `Object` | `{ position: 'fixed', left: '10px', top: '10px', zIndex: 99999 , cursor: 'move' }` | css style |
+| className | `string` | `'whiteboard'` | Css class name |
 
 # License
 MIT

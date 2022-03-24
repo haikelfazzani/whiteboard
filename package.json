@@ -1,5 +1,5 @@
 {
-  "name": "react-fabric",
+  "name": "whiteboard-react",
   "version": "0.0.3",
   "description": "React draggable component",
   "main": "lib/index.js",
@@ -8,8 +8,8 @@
   "files": [
     "/lib"
   ],
-  "homepage": "https://haikelfazzani.github.io/react-fabric",
-  "repository": "https://github.com/haikelfazzani/react-fabric",
+  "homepage": "https://haikelfazzani.github.io/whiteboard-react",
+  "repository": "https://github.com/haikelfazzani/whiteboard-react",
   "scripts": {
     "storybook": "start-storybook -p 6006",
     "build-storybook": "build-storybook",

@@ -1,3 +1,3 @@
-import { Editor } from './components/Editor';
+import { Whiteboard } from './components/Whiteboard';
 
-export { Editor }
+export { Whiteboard }

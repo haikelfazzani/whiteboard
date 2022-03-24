@@ -6,7 +6,7 @@ interface IProps {
   options?: object
 }
 
-export function Editor({ className, options }: IProps) {
+export function Whiteboard({ className, options }: IProps) {
   const parentRef = useRef<any>();
   const canvasRef = useRef<any>();
   const [editor, setEditor] = useState<any>();
