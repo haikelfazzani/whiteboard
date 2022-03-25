@@ -74,12 +74,48 @@ export function Whiteboard({ className, options }: IProps) {
     const canvas = new fabric.Canvas(canvasRef?.current, canvasOptions);
     setEditor(canvas);
 
+    const onKeydown = (e: KeyboardEvent) => {
+      if (!canvas) return;
+
+      if (e.code === 'Delete' || e.keyCode === 46 || e.which === 46) {
+        const activeObject = canvas.getActiveObject();
+        if (activeObject) {
+          canvas.remove(activeObject);
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 67 || e.which === 67)) {
+        const object = fabric.util.object.clone(canvas.getActiveObject());
+        object.set("top", object.top + 5);
+        object.set("left", object.left + 5);
+        canvas.add(object);
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 83 || e.which === 83)) {
+        e.preventDefault();
+        localStorage.setItem('whiteboard-cache', JSON.stringify(canvas.toDatalessJSON()))
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 79 || e.which === 79)) {
+        e.preventDefault();
+        inputFileRef.current.click()
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 90 || e.which === 90)) {
+        e.preventDefault();
+        canvas.undo()
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 89 || e.which === 89)) {
+        e.preventDefault();
+        canvas.redo()
+      }
+    }
+
     if (parentRef && parentRef.current && canvas) {
       const data = localStorage.getItem('whiteboard-cache');
 
-      if (data) {
-        canvas.loadFromJSON(JSON.parse(data), canvas.renderAll.bind(canvas));
-      }
+      if (data) canvas.loadFromJSON(JSON.parse(data), canvas.renderAll.bind(canvas));
 
       // canvas.on('mouse:down', function (event) {
       //   setShowObjOptions(canvas.getActiveObject() ? true : false)
@@ -88,13 +124,16 @@ export function Whiteboard({ className, options }: IProps) {
       canvas.setHeight(parentRef.current?.clientHeight || 0);
       canvas.setWidth(parentRef.current?.clientWidth || 0);
       canvas.renderAll();
+
+      document.addEventListener('keydown', onKeydown, false);
     }
 
     return () => {
       //canvas.off('mouse:down');
+      document.removeEventListener('keydown', onKeydown, false);
       canvas.dispose();
     }
-  }, [])
+  }, []);
 
   const onToolbar = (objName: string) => {
     let objType;
@@ -154,7 +193,7 @@ export function Whiteboard({ className, options }: IProps) {
         objType = new fabric.Line([50, 10, 200, 150], { ...objOptions, angle: 47 });
         break;
 
-      case 'Image':
+      case 'Load Image':
         inputFileRef.current.click()
         break;
 
@@ -191,7 +230,7 @@ export function Whiteboard({ className, options }: IProps) {
     switch (actionName) {
       case 'Show Object Options':
         setShowObjOptions(!showObjOptions);
-      break;
+        break;
 
       case 'Export':
         const image = editor.toDataURL("image/png").replace("image/png", "image/octet-stream");
@@ -356,7 +395,7 @@ export function Whiteboard({ className, options }: IProps) {
           <button onClick={() => { onToolbar('Rect') }} title="Add Rectangle"><RectIcon /></button>
           <button onClick={() => { onToolbar('Triangle') }} title="Add Triangle"><TriangleIcon /></button>
         </Dropdown>
-        <button onClick={() => { onToolbar('Image') }} title="Add Image"><ImageIcon /></button>
+        <button onClick={() => { onToolbar('Load Image') }} title="Load Image"><ImageIcon /></button>
       </div>
     </div>
 
