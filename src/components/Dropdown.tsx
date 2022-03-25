@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface IProps {
   title?: any,
-  children: any
+  style?: object
+  children: any,
 }
 
-export default function Dropdown({ children, title }: IProps) {
+export default function Dropdown({ children, style, title }: IProps) {
 
   const node = useRef<any>();
   const [show, setShow] = useState<boolean>(false);
@@ -32,7 +33,8 @@ export default function Dropdown({ children, title }: IProps) {
         top: 0,
         zIndex: 9999,
         overflow: 'hidden',
-        display: show ? 'block' : 'none'
+        display: show ? 'block' : 'none',
+        ...style
       }}>
       {children}
     </div>

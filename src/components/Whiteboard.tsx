@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Dropdown from './Dropdown';
 import { fabric } from './FabricExtended';
+import { RgbaStringColorPicker } from "react-colorful";
+import Dropdown from './Dropdown';
 import ArrowIcon from './icons/ArrowIcon';
 import CircleIcon from './icons/CircleIcon';
 import EraseIcon from './icons/EraseIcon';
@@ -13,23 +14,41 @@ import JsonIcon from './icons/JsonIcon';
 import LineIcon from './icons/LineIcon';
 import PenIcon from './icons/PenIcon';
 import RectIcon from './icons/RectIcon';
-import RedoIcon from './icons/RedoIcon';
+import UndoIcon from './icons/UndoIcon';
 import StickyIcon from './icons/StickyIcon';
 import TextIcon from './icons/TextIcon';
 import TrashIcon from './icons/TrashIcon';
 import TriangleIcon from './icons/TriangleIcon';
-import UndoIcon from './icons/UndoIcon';
-import { RgbaStringColorPicker } from "react-colorful";
-import PaletteIcon from './icons/PaletteIcon';
-import PaintBucketIcon from './icons/PaintBucketIcon';
+import RedoIcon from './icons/RedoIcon';
 import GeometryIcon from './icons/GeometryIcon';
 import './Whiteboard.css';
-import FontSizeIcon from './icons/FontSizeIcon';
+import CogIcon from './icons/CogIcon';
 
 interface IProps {
   className?: string,
   options?: object
 }
+
+const bottomMenu = [
+  { title: 'Show Object Options', icon: <CogIcon /> },
+  { title: 'Grid', icon: <GridIcon /> },
+  { title: 'Erase', icon: <EraseIcon /> },
+  { title: 'Undo', icon: <UndoIcon /> },
+  { title: 'Redo', icon: <RedoIcon /> },
+  { title: 'Save', icon: <FlopIcon /> },
+  { title: 'Export', icon: <ExportIcon /> },
+  { title: 'ToJson', icon: <JsonIcon /> },
+  { title: 'Clear', icon: <TrashIcon /> }
+];
+
+const toolbar = [
+  { title: 'Select', icon: <HandIcon /> },
+  { title: 'Draw', icon: <PenIcon /> },
+  { title: 'Text', icon: <TextIcon /> },
+  { title: 'Sticky', icon: <StickyIcon /> },
+  { title: 'Arrow', icon: <ArrowIcon /> },
+  { title: 'Line', icon: <LineIcon /> }
+];
 
 const backgroundImage = 'linear-gradient(to right,#dfdfdf 1px,transparent 1px),linear-gradient(to bottom,#dfdfdf 1px,transparent 1px)';
 
@@ -46,8 +65,9 @@ export function Whiteboard({ className, options }: IProps) {
     stroke: '#000000', fontSize: 22, fill: 'rgba(255, 255, 255, 0.0)', strokeWidth: 3, ...options
   });
 
-  const [showObjOptions, setShowObjOptions] = useState<boolean>(false);
+  const [colorProp, setColorProp] = useState<string>('background')
 
+  const [showObjOptions, setShowObjOptions] = useState<boolean>(false);
   const [showGrid, setShowGrid] = useState<boolean>(true);
 
   useEffect(() => {
@@ -56,13 +76,14 @@ export function Whiteboard({ className, options }: IProps) {
 
     if (parentRef && parentRef.current && canvas) {
       const data = localStorage.getItem('whiteboard-cache');
+
       if (data) {
         canvas.loadFromJSON(JSON.parse(data), canvas.renderAll.bind(canvas));
       }
 
-      canvas.on('mouse:down', function (event) {
-        setShowObjOptions(canvas.getActiveObject() ? true : false)
-      });
+      // canvas.on('mouse:down', function (event) {
+      //   setShowObjOptions(canvas.getActiveObject() ? true : false)
+      // });
 
       canvas.setHeight(parentRef.current?.clientHeight || 0);
       canvas.setWidth(parentRef.current?.clientWidth || 0);
@@ -70,7 +91,7 @@ export function Whiteboard({ className, options }: IProps) {
     }
 
     return () => {
-      canvas.off('mouse:down');
+      //canvas.off('mouse:down');
       canvas.dispose();
     }
   }, [])
@@ -79,38 +100,40 @@ export function Whiteboard({ className, options }: IProps) {
     let objType;
 
     switch (objName) {
-      case 'select':
+      case 'Select':
         editor.isDrawingMode = false;
         editor.discardActiveObject().renderAll();
         break;
 
-      case 'draw':
-        editor.isDrawingMode = true;
-        editor.freeDrawingBrush.width = 5;
-        editor.freeDrawingBrush.color = "rgba(255,0,0,.5)";
+      case 'Draw':
+        if (editor) {
+          editor.isDrawingMode = true;
+          editor.freeDrawingBrush.width = 5;
+          editor.freeDrawingBrush.color = "rgba(255,0,0,.5)";
+        }
         break;
 
-      case 'text':
+      case 'Text':
         editor.isDrawingMode = false;
         objType = new fabric.Textbox('Your text here', { fontSize: objOptions.fontSize });
         break;
 
-      case 'circle':
+      case 'Circle':
         editor.isDrawingMode = false;
         objType = new fabric.Circle({ ...objOptions, radius: 70 });
         break;
 
-      case 'rect':
+      case 'Rect':
         editor.isDrawingMode = false;
         objType = new fabric.Rect({ ...objOptions, width: 100, height: 100 });
         break;
 
-      case 'triangle':
+      case 'Triangle':
         editor.isDrawingMode = false;
         objType = new fabric.Triangle({ ...objOptions, width: 100, height: 100 });
         break;
 
-      case 'arrow':
+      case 'Arrow':
         editor.isDrawingMode = false;
         const triangle = new fabric.Triangle({
           ...objOptions,
@@ -126,36 +149,37 @@ export function Whiteboard({ className, options }: IProps) {
         objType = new fabric.Group([line, triangle]);
         break;
 
-      case 'line':
+      case 'Line':
         editor.isDrawingMode = false;
         objType = new fabric.Line([50, 10, 200, 150], { ...objOptions, angle: 47 });
         break;
 
-      case 'image':
+      case 'Image':
         inputFileRef.current.click()
         break;
 
-      case 'sticky':
-        // objType = new fabric.TextboxWithPadding('Your text here', {
-        //   backgroundColor: '#8bc34a',
-        //   fill: '#fff',
-        //   width: 150,
-        //   textAlign: 'left',
-        //   splitByGrapheme: true,
-        //   height: 150,
-        //   padding: 20
-        // });
+      case 'Sticky':
+        objType = new fabric.Textbox('Your text here', {
+          ...objOptions,
+          backgroundColor: '#8bc34a',
+          fill: '#fff',
+          width: 150,
+          textAlign: 'left',
+          splitByGrapheme: true,
+          height: 150,
+          padding: 20
+        });
         break;
 
       default:
         break;
     }
 
-    if (objName === 'image') {
+    if (objName === 'Image') {
       return
     }
 
-    if (objName !== 'draw' && objName !== 'select') {
+    if (objName !== 'Draw' && objName !== 'Select') {
       editor.add(objType);
       editor.centerObject(objType);
     }
@@ -165,23 +189,27 @@ export function Whiteboard({ className, options }: IProps) {
 
   const onBottomMenu = (actionName: string) => {
     switch (actionName) {
-      case 'export':
+      case 'Show Object Options':
+        setShowObjOptions(!showObjOptions);
+      break;
+
+      case 'Export':
         const image = editor.toDataURL("image/png").replace("image/png", "image/octet-stream");
         window.open(image);
         break;
 
-      case 'save':
+      case 'Save':
         localStorage.setItem('whiteboard-cache', JSON.stringify(editor.toDatalessJSON()))
         break;
 
-      case 'erase':
+      case 'Erase':
         const activeObject = editor.getActiveObject();
         if (activeObject) {
           editor.remove(activeObject);
         }
         break;
 
-      case 'toJson':
+      case 'ToJson':
         const content = JSON.stringify(editor.toDatalessJSON());
         const link = document.createElement("a");
         const file = new Blob([content], { type: 'application/json' });
@@ -192,19 +220,19 @@ export function Whiteboard({ className, options }: IProps) {
         link.remove();
         break;
 
-      case 'undo':
+      case 'Undo':
         editor.undo()
         break;
 
-      case 'redo':
+      case 'Redo':
         editor.redo()
         break;
 
-      case 'bg-grid':
+      case 'Grid':
         setShowGrid(!showGrid)
         break;
 
-      case 'clear':
+      case 'Clear':
         if (confirm('Are you sure to reset the whiteboard?')) {
           localStorage.removeItem('whiteboard-cache')
           editor.clearHistory();
@@ -225,6 +253,7 @@ export function Whiteboard({ className, options }: IProps) {
     if (file && (fileType === 'image/png' || fileType === 'image/jpeg')) {
       fabric.Image.fromURL(url, function (img) {
         img.set({ width: 180, height: 180 });
+        editor.centerObject(img);
         editor.add(img);
       });
     }
@@ -234,19 +263,30 @@ export function Whiteboard({ className, options }: IProps) {
         var svg = fabric.util.groupSVGElements(objects, options);
         svg.scaleToWidth(180);
         svg.scaleToHeight(180);
+        editor.centerObject(svg);
         editor.add(svg);
       });
     }
   }
 
-  const onColorChange = (value: any, name: string) => {
+  const onRadioColor = (e: any) => {
+    setColorProp(e.target.value);
+  }
+
+  const onColorChange = (value: any) => {
     const activeObj = editor.getActiveObject();
 
     if (activeObj) {
-      const ops = { ...objOptions, [name]: value };
-      activeObj.set(name, value);
+      const ops = { ...objOptions, [colorProp]: value };
+      activeObj.set(colorProp, value);
       setObjOptions(ops);
       editor.renderAll()
+    }
+    else {
+      if (colorProp === 'backgroundColor') {
+        editor.backgroundColor = value;
+        editor.renderAll()
+      }
     }
   }
 
@@ -277,42 +317,47 @@ export function Whiteboard({ className, options }: IProps) {
   }
 
   return (<div className={'w-100 h-100 whiteboard ' + className} style={{ backgroundImage: showGrid ? backgroundImage : '' }} ref={parentRef}>
-    {showObjOptions && <div className='w-100 d-flex justify-center'
-      style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999 }}>
-      <div className='top-menu d-flex'>
-        <div className='d-flex align-center'>
-          <label><FontSizeIcon /></label>
-          <input type="number" min="1" name='fontSize' onChange={onOptionsChange} defaultValue="22" />
+    {showObjOptions && <div className='left-menu'>
+      <div className='bg-white d-flex align-center justify-between shadow br-7'>
+        <label>Font size</label>
+        <input type="number" min="1" name='fontSize' onChange={onOptionsChange} defaultValue="22" />
+      </div>
+
+      <div className='bg-white d-flex align-center justify-between shadow br-7'>
+        <label>Stroke</label>
+        <input type="number" min="1" name='strokeWidth' onChange={onOptionsChange} defaultValue="3" />
+      </div>
+
+      <div className='bg-white d-flex flex-column shadow br-7'>
+        <div className='d-flex align-end mb-10'>
+          <input className='mr-10' type="radio" onChange={onRadioColor} name="color" defaultValue="backgroundColor" />
+          <label htmlFor='backgroundColor'>background</label>
+        </div>
+        <div className='d-flex align-end mb-10'>
+          <input className='mr-10' type="radio" onChange={onRadioColor} id="stroke" name="color" defaultValue="stroke" />
+          <label htmlFor='stroke'>stroke</label>
         </div>
 
-        <div className='d-flex align-center'>
-          <label>Stroke</label>
-          <input type="number" min="1" name='strokeWidth' onChange={onOptionsChange} defaultValue="3" />
+        <div className='d-flex align-end mb-10'>
+          <input className='mr-10' type="radio" onChange={onRadioColor} id="fill" name="color" defaultValue="fill" />
+          <label htmlFor='fill'>fill</label>
         </div>
 
-        <Dropdown title={<PaletteIcon />}>
-          <RgbaStringColorPicker onChange={(color) => { onColorChange(color, 'stroke') }} />
-        </Dropdown>
-
-        <Dropdown title={<PaintBucketIcon />}>
-          <RgbaStringColorPicker onChange={(color) => { onColorChange(color, 'fill') }} />
-        </Dropdown>
+        <RgbaStringColorPicker onChange={onColorChange} />
       </div>
     </div>}
 
-    <div className='toolbar shadow br-7'>
-      <button onClick={() => { onToolbar('select') }} title="Hand"><HandIcon /></button>
-      <button onClick={() => { onToolbar('draw') }} title="Pen"><PenIcon /></button>
-      <button onClick={() => { onToolbar('text') }} title="Add Text"><TextIcon /></button>
-      <button onClick={() => { onToolbar('sticky') }} title="Add Sticky"><StickyIcon /></button>
-      <button onClick={() => { onToolbar('arrow') }} title="Add Arrow"><ArrowIcon /></button>
-      <button onClick={() => { onToolbar('line') }} title="Add Line"><LineIcon /></button>
-      <Dropdown title={<GeometryIcon />}>
-        <button onClick={() => { onToolbar('circle') }} title="Add Circle"><CircleIcon /></button>
-        <button onClick={() => { onToolbar('rect') }} title="Add Rectangle"><RectIcon /></button>
-        <button onClick={() => { onToolbar('triangle') }} title="Add Triangle"><TriangleIcon /></button>
-      </Dropdown>
-      <button onClick={() => { onToolbar('image') }} title="Add Image"><ImageIcon /></button>
+
+    <div className='w-100 d-flex justify-center align-center' style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999 }}>
+      <div className='bg-white d-flex justify-center align-center shadow br-7'>
+        {toolbar.map(item => <button key={item.title} onClick={() => { onToolbar(item.title) }} title={item.title}>{item.icon}</button>)}
+        <Dropdown title={<GeometryIcon />}>
+          <button onClick={() => { onToolbar('Circle') }} title="Add Circle"><CircleIcon /></button>
+          <button onClick={() => { onToolbar('Rect') }} title="Add Rectangle"><RectIcon /></button>
+          <button onClick={() => { onToolbar('Triangle') }} title="Add Triangle"><TriangleIcon /></button>
+        </Dropdown>
+        <button onClick={() => { onToolbar('Image') }} title="Add Image"><ImageIcon /></button>
+      </div>
     </div>
 
     <canvas ref={canvasRef} className='canvas' />
@@ -321,14 +366,7 @@ export function Whiteboard({ className, options }: IProps) {
       <div className='d-flex align-center bg-white br-7 shadow pr-1 pl-1'>feedback</div>
 
       <div className='d-flex align-center bg-white br-7 shadow'>
-        <button onClick={() => { onBottomMenu('bg-grid') }} title="Grid"><GridIcon /></button>
-        <button onClick={() => { onBottomMenu('erase') }} title="Eraser"><EraseIcon /></button>
-        <button onClick={() => { onBottomMenu('undo') }} title="Undo"><RedoIcon /></button>
-        <button onClick={() => { onBottomMenu('redo') }} title="Redo"><UndoIcon /></button>
-        <button onClick={() => { onBottomMenu('save') }} title="Save"><FlopIcon /></button>
-        <button onClick={() => { onBottomMenu('export') }} title="Export PNG"><ExportIcon /></button>
-        <button onClick={() => { onBottomMenu('toJson') }} title="Export Json"><JsonIcon /></button>
-        <button onClick={() => { onBottomMenu('clear') }} title="Reset"><TrashIcon /></button>
+        {bottomMenu.map(item => <button key={item.title} onClick={() => { onBottomMenu(item.title) }} title={item.title}>{item.icon}</button>)}
       </div>
 
       <select className='d-flex align-center bg-white br-7 shadow border-0 pr-1 pl-1' onChange={onZoom} defaultValue="1">

@@ -7,32 +7,19 @@
 
 .canvas-container {width: 100% !important; height: 100% !important;}
 
-.top-menu button {
-  padding: 0 !important;
-}
-
-.top-menu>* {
-  background-color: #fff;
-  padding: 7px 12px;
-  margin: 7px;
-  font-size: 18px;
-  border-radius: 7px;
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 24%), 1px 1px 5px rgb(0 0 0 / 22%);
-}
-
-.top-menu:last-child {
-  border: 0;
-}
-
-.toolbar {  
+.left-menu {    
   position: fixed;
   left: 10px;
   top: 50%;
   transform: translate(0, -50%);
-  display: flex;
-  flex-direction: column;
-  background-color: #fff;
   z-index: 99999;
+  text-transform: uppercase;
+  font-size: 14px;
+}
+
+.left-menu>div {
+  padding: 12px;
+  margin-bottom: 10px;
 }
 
 .bottom-menu {  
@@ -54,17 +41,21 @@
   justify-content: center;  
   padding: 12px;
   cursor: pointer;
+  transition: opacity 0.25s;
 }
 
 button:hover {opacity: 0.8;}
 
-input[type="number"] {
-  width: 60px;
-  padding: 0;
-  text-align: center;
-  border: 0;
+button:active, button:focus, button:target{
+  background-color: black;
+  color: #fff;
+}
+
+input[type="number"] {  
+  font-size: 14px;
+  padding: 0 0 0 10px;
+  width: 70px;
   outline: none;
-  font-size: 16px;
 }
 
 .shadow {box-shadow: 0 0 0 1px rgb(255 255 255 / 24%), 1px 1px 5px rgb(0 0 0 / 22%);}
@@ -77,9 +68,12 @@ input[type="number"] {
 .border-0 {border: 0;}
 
 .d-flex {display: flex;}
+.flex-column {flex-direction: column;}
+
 .justify-between {justify-content: space-between;}
 .justify-center { justify-content: center;}
 .align-center {align-items: center;}
+.align-end {align-items: flex-end;}
 
 .br-7 {border-radius: 7px;}
 
