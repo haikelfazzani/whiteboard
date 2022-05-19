@@ -27,7 +27,8 @@ import { WhiteboardContext } from './WhiteboardStore';
 
 interface IProps {
   className?: string,
-  options?: object
+  options?: object,
+  onChange?: any
 }
 
 const bottomMenu = [
@@ -51,16 +52,19 @@ const toolbar = [
   { title: 'Line', icon: <LineIcon /> }
 ];
 
-export function CanvasEditor({ className, options }: IProps) {
+let currentCanvas: any = null;
+
+export function CanvasEditor({ onChange, className, options }: IProps) {
   const parentRef = useRef<any>();
   const canvasRef = useRef<any>();
+  const inputImageFileRef = useRef<any>();
+  const inputJsonFileRef = useRef<any>();
 
   const { gstate, setGState } = useContext(WhiteboardContext);
   const { canvasOptions, backgroundImage } = gstate;
 
   const [editor, setEditor] = useState<any>();
 
-  const inputFileRef = useRef<any>();
 
   const [objOptions, setObjOptions] = useState({
     stroke: '#000000', fontSize: 22, fill: 'rgba(255, 255, 255, 0.0)', strokeWidth: 3, ...options
@@ -71,8 +75,15 @@ export function CanvasEditor({ className, options }: IProps) {
   const [showObjOptions, setShowObjOptions] = useState<boolean>(false);
   const [showGrid, setShowGrid] = useState<boolean>(true);
 
+  const canvasModifiedCallback = () => {
+    if (currentCanvas) {
+      onChange(currentCanvas.toDatalessJSON())
+    }
+  };
+
   useEffect(() => {
     const canvas = new fabric.Canvas(canvasRef?.current, canvasOptions);
+    currentCanvas = canvas;
     setEditor(canvas);
 
     const onKeydown = (e: KeyboardEvent) => {
@@ -99,7 +110,7 @@ export function CanvasEditor({ className, options }: IProps) {
 
       if ((e.ctrlKey || e.metaKey) && (e.keyCode === 79 || e.which === 79)) {
         e.preventDefault();
-        inputFileRef.current.click()
+        inputImageFileRef.current.click()
       }
 
       if ((e.ctrlKey || e.metaKey) && (e.keyCode === 90 || e.which === 90)) {
@@ -122,7 +133,13 @@ export function CanvasEditor({ className, options }: IProps) {
 
       // canvas.on('mouse:down', function (event) {
       //   setShowObjOptions(canvas.getActiveObject() ? true : false)
-      // });
+      // });      
+
+      if (onChange) {
+        canvas.on('object:added', canvasModifiedCallback);
+        canvas.on('object:removed', canvasModifiedCallback);
+        canvas.on('object:modified', canvasModifiedCallback);
+      }
 
       canvas.setHeight(parentRef.current?.clientHeight || 0);
       canvas.setWidth(parentRef.current?.clientWidth || 0);
@@ -132,6 +149,10 @@ export function CanvasEditor({ className, options }: IProps) {
     }
 
     return () => {
+      canvas.off('object:added', canvasModifiedCallback);
+      canvas.off('object:removed', canvasModifiedCallback);
+      canvas.off('object:modified', canvasModifiedCallback);
+
       //canvas.off('mouse:down');
       document.removeEventListener('keydown', onKeydown, false);
       canvas.dispose();
@@ -196,10 +217,6 @@ export function CanvasEditor({ className, options }: IProps) {
         objType = new fabric.Line([50, 10, 200, 150], { ...objOptions, angle: 47 });
         break;
 
-      case 'Load Image':
-        inputFileRef.current.click()
-        break;
-
       case 'Sticky':
         objType = new fabric.Textbox('Your text here', {
           ...objOptions,
@@ -215,10 +232,6 @@ export function CanvasEditor({ className, options }: IProps) {
 
       default:
         break;
-    }
-
-    if (objName === 'Image') {
-      return
     }
 
     if (objName !== 'Draw' && objName !== 'Select') {
@@ -288,26 +301,42 @@ export function CanvasEditor({ className, options }: IProps) {
   }
 
   const onFileChange = (e: any) => {
+    console.log(e.target.files.length);
+
+    if (e.target.files.length < 1) return;
+
+    const inputFileName = e.target.name;
     const file = e.target.files[0];
     const fileType = file.type;
     const url = URL.createObjectURL(file);
 
-    if (file && (fileType === 'image/png' || fileType === 'image/jpeg')) {
-      fabric.Image.fromURL(url, function (img) {
-        img.set({ width: 180, height: 180 });
-        editor.centerObject(img);
-        editor.add(img);
-      });
+    if (inputFileName === 'json') {
+      fetch(url).then(r => r.json())
+        .then(json => {
+          editor.loadFromJSON(json, (v: any) => {
+            console.log(v);
+          });
+        });
     }
+    else {
 
-    if (file && fileType === 'image/svg+xml') {
-      fabric.loadSVGFromURL(url, function (objects, options) {
-        var svg = fabric.util.groupSVGElements(objects, options);
-        svg.scaleToWidth(180);
-        svg.scaleToHeight(180);
-        editor.centerObject(svg);
-        editor.add(svg);
-      });
+      if (fileType === 'image/png' || fileType === 'image/jpeg') {
+        fabric.Image.fromURL(url, function (img) {
+          img.set({ width: 180, height: 180 });
+          editor.centerObject(img);
+          editor.add(img);
+        });
+      }
+
+      if (fileType === 'image/svg+xml') {
+        fabric.loadSVGFromURL(url, function (objects, options) {
+          var svg = fabric.util.groupSVGElements(objects, options);
+          svg.scaleToWidth(180);
+          svg.scaleToHeight(180);
+          editor.centerObject(svg);
+          editor.add(svg);
+        });
+      }
     }
   }
 
@@ -366,6 +395,14 @@ export function CanvasEditor({ className, options }: IProps) {
     e.stopPropagation();
   }
 
+  const onLoadImage = () => {
+    inputImageFileRef.current.click();
+  }
+
+  const onLoadFromJson = () => {
+    inputJsonFileRef.current.click();
+  }
+
   return (<div className={'w-100 h-100 whiteboard ' + className}
     style={{ backgroundImage: showGrid ? backgroundImage : '' }}
     ref={parentRef}>
@@ -408,7 +445,8 @@ export function CanvasEditor({ className, options }: IProps) {
           <button onClick={() => { onToolbar('Rect') }} title="Add Rectangle"><RectIcon /></button>
           <button onClick={() => { onToolbar('Triangle') }} title="Add Triangle"><TriangleIcon /></button>
         </Dropdown>
-        <button onClick={() => { onToolbar('Load Image') }} title="Load Image"><ImageIcon /></button>
+        <button onClick={() => { onLoadImage() }} title="Load Image"><ImageIcon /></button>
+        <button onClick={() => { onLoadFromJson() }} title="Load From Json"><JsonIcon /></button>
       </div>
     </div>
 
@@ -430,7 +468,8 @@ export function CanvasEditor({ className, options }: IProps) {
         <option value="0.25">25%</option>
       </select>
 
-      <input ref={inputFileRef} type="file" onChange={onFileChange} accept="image/svg+xml, image/gif, image/jpeg, image/png" hidden />
+      <input ref={inputImageFileRef} type="file" name='image' onChange={onFileChange} accept="image/svg+xml, image/gif, image/jpeg, image/png" hidden />
+      <input ref={inputJsonFileRef} type="file" name='json' onChange={onFileChange} accept="application/json" hidden />
     </div>
   </div>)
 }

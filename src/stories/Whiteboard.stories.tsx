@@ -7,5 +7,6 @@ import './index.css';
 export default { title: 'Whiteboard', component: Whiteboard } as ComponentMeta<typeof Whiteboard>;
 
 export const C: ComponentStory<typeof Whiteboard> = () => {
-  return <Whiteboard />
+  return <Whiteboard onChange={(v)=>{console.log(v);
+  }} />
 }

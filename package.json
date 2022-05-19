@@ -8,8 +8,8 @@
   "files": [
     "/lib"
   ],
-  "homepage": "https://haikelfazzani.github.io/whiteboard-react",
-  "repository": "https://github.com/haikelfazzani/whiteboard-react",
+  "homepage": "https://haikelfazzani.github.io/whiteboard",
+  "repository": "https://github.com/haikelfazzani/whiteboard",
   "scripts": {
     "storybook": "start-storybook -p 6006",
     "build-storybook": "build-storybook",
@@ -24,39 +24,39 @@
     "fabric": ">=5.2.1",
     "react": ">=16.13.0",
     "react-dom": ">=16.13.0",
-    "react-colorful": "^5.5.1"
+    "react-colorful": ">=5.5.1"
   },
   "devDependencies": {
-    "@babel/core": ">=7.12.9",
-    "@rollup/plugin-commonjs": ">=17.0.0",
-    "@rollup/plugin-node-resolve": ">=11.0.0",
-    "@storybook/addon-actions": ">=6.1.9",
-    "@storybook/addon-essentials": ">=6.1.9",
-    "@storybook/addon-links": ">=6.1.9",
-    "@storybook/react": ">=6.1.9",
-    "@types/fabric": "^4.5.7",
-    "@types/react": ">=17.0.0",
-    "babel-loader": ">=8.2.2",
+    "@babel/core": "^7.12.9",
+    "@rollup/plugin-commonjs": "^17.0.0",
+    "@rollup/plugin-node-resolve": "^11.0.0",
+    "@storybook/addon-actions": "^6.1.9",
+    "@storybook/addon-essentials": "^6.1.9",
+    "@storybook/addon-links": "^6.1.9",
+    "@storybook/react": "^6.1.9",
+    "@types/fabric": ">=4.5.7",
+    "@types/react": "^17.0.0",
+    "babel-loader": "^8.2.2",
     "fabric": ">=5.2.1",
-    "gh-pages": ">=3.2.3",
+    "gh-pages": "^3.2.3",
     "postcss": "^8.2.1",
-    "react": ">=17.0.1",
+    "react": "^17.0.1",
     "react-colorful": "^5.5.1",
-    "react-dom": ">=17.0.1",
-    "rollup": ">=2.70.1",
+    "react-dom": "^17.0.1",
+    "rollup": "^2.70.1",
     "rollup-plugin-peer-deps-external": ">=2.2.4",
-    "rollup-plugin-postcss": ">=4.0.0",
+    "rollup-plugin-postcss": "^4.0.0",
     "rollup-plugin-typescript2": ">=0.31.2",
-    "typescript": ">=4.1.2"
+    "typescript": "^4.1.2"
   },
   "np": {
     "publish": false,
     "tests": false
   },
   "keywords": [
-    "draggable",
+    "whiteboard",
+    "sketchboard",
     "component",
-    "react",
-    "typescript"
+    "react"
   ]
 }
