@@ -249,8 +249,13 @@ export function CanvasEditor({ onChange, className, options }: IProps) {
         break;
 
       case 'Export':
-        const image = editor.toDataURL("image/png").replace("image/png", "image/octet-stream");
-        window.open(image);
+        const image = editor.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.setAttribute('download', 'whiteboard.png');
+        link.href = image;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
         break;
 
       case 'Save':
