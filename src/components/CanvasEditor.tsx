@@ -1,475 +1,818 @@
-import React, { useEffect, useRef, useState, useContext } from 'react';
-import { fabric } from './FabricExtended';
-import { RgbaStringColorPicker } from "react-colorful";
+import React, {
+  forwardRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+import { RgbaStringColorPicker } from 'react-colorful';
+import { fabric, HistoryCanvas } from './FabricExtended';
 import Dropdown from './Dropdown';
 import ArrowIcon from './icons/ArrowIcon';
 import CircleIcon from './icons/CircleIcon';
+import CogIcon from './icons/CogIcon';
+import DiamondIcon from './icons/DiamondIcon';
+import DoubleArrowIcon from './icons/DoubleArrowIcon';
+import DuplicateIcon from './icons/DuplicateIcon';
+import EllipseIcon from './icons/EllipseIcon';
 import EraseIcon from './icons/EraseIcon';
 import ExportIcon from './icons/ExportIcon';
 import FlopIcon from './icons/FlopIcon';
+import GeometryIcon from './icons/GeometryIcon';
 import GridIcon from './icons/GridIcon';
 import HandIcon from './icons/HandIcon';
+import HexagonIcon from './icons/HexagonIcon';
+import HighlighterIcon from './icons/HighlighterIcon';
 import ImageIcon from './icons/ImageIcon';
 import JsonIcon from './icons/JsonIcon';
 import LineIcon from './icons/LineIcon';
 import PenIcon from './icons/PenIcon';
+import PentagonIcon from './icons/PentagonIcon';
+import RecordIcon from './icons/RecordIcon';
 import RectIcon from './icons/RectIcon';
-import UndoIcon from './icons/UndoIcon';
+import RedoIcon from './icons/RedoIcon';
+import RoundedRectIcon from './icons/RoundedRectIcon';
+import StarIcon from './icons/StarIcon';
 import StickyIcon from './icons/StickyIcon';
+import StopIcon from './icons/StopIcon';
 import TextIcon from './icons/TextIcon';
 import TrashIcon from './icons/TrashIcon';
 import TriangleIcon from './icons/TriangleIcon';
-import RedoIcon from './icons/RedoIcon';
-import GeometryIcon from './icons/GeometryIcon';
-import './Whiteboard.css';
-import CogIcon from './icons/CogIcon';
+import UndoIcon from './icons/UndoIcon';
 import { WhiteboardContext } from './WhiteboardStore';
+import { createShape } from '../utils/shapes';
+import {
+  CanvasRecorder,
+  downloadBlob,
+  downloadCanvasVideo,
+  exportCanvasToVideo,
+} from '../utils/exportVideo';
+import { attachShapeTextEditing } from '../utils/shapeText';
+import type {
+  ShapeOptions,
+  ShapeType,
+  VideoExportOptions,
+  WhiteboardAPI,
+  WhiteboardProps,
+} from '../types';
+import './Whiteboard.css';
 
-interface IProps {
-  className?: string,
-  options?: object,
-  onChange?: any
-}
+const headerTools: { title: ShapeType; icon: React.ReactNode }[] = [
+  { title: 'Select', icon: <HandIcon /> },
+  { title: 'Draw', icon: <PenIcon /> },
+  { title: 'Highlighter', icon: <HighlighterIcon /> },
+  { title: 'Text', icon: <TextIcon /> },
+  { title: 'Sticky', icon: <StickyIcon /> },
+  { title: 'Arrow', icon: <ArrowIcon /> },
+  { title: 'DoubleArrow', icon: <DoubleArrowIcon /> },
+  { title: 'Line', icon: <LineIcon /> },
+];
 
-const bottomMenu = [
+const geometryTools: { title: ShapeType; icon: React.ReactNode; label: string }[] = [
+  { title: 'Circle', icon: <CircleIcon />, label: 'Circle' },
+  { title: 'Ellipse', icon: <EllipseIcon />, label: 'Ellipse' },
+  { title: 'Rect', icon: <RectIcon />, label: 'Rectangle' },
+  { title: 'RoundedRect', icon: <RoundedRectIcon />, label: 'Rounded rectangle' },
+  { title: 'Triangle', icon: <TriangleIcon />, label: 'Triangle' },
+  { title: 'Diamond', icon: <DiamondIcon />, label: 'Diamond' },
+  { title: 'Star', icon: <StarIcon />, label: 'Star' },
+  { title: 'Pentagon', icon: <PentagonIcon />, label: 'Pentagon' },
+  { title: 'Hexagon', icon: <HexagonIcon />, label: 'Hexagon' },
+];
+
+const footerTools = [
   { title: 'Show Object Options', icon: <CogIcon /> },
   { title: 'Grid', icon: <GridIcon /> },
   { title: 'Erase', icon: <EraseIcon /> },
+  { title: 'Duplicate', icon: <DuplicateIcon /> },
   { title: 'Undo', icon: <UndoIcon /> },
   { title: 'Redo', icon: <RedoIcon /> },
   { title: 'Save', icon: <FlopIcon /> },
   { title: 'Export', icon: <ExportIcon /> },
   { title: 'ToJson', icon: <JsonIcon /> },
-  { title: 'Clear', icon: <TrashIcon /> }
-];
+  { title: 'Clear', icon: <TrashIcon /> },
+] as const;
 
-const toolbar = [
-  { title: 'Select', icon: <HandIcon /> },
-  { title: 'Draw', icon: <PenIcon /> },
-  { title: 'Text', icon: <TextIcon /> },
-  { title: 'Sticky', icon: <StickyIcon /> },
-  { title: 'Arrow', icon: <ArrowIcon /> },
-  { title: 'Line', icon: <LineIcon /> }
-];
+const CACHE_KEY = 'whiteboard-cache';
 
-let currentCanvas: any = null;
+export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
+  function CanvasEditor({ onChange, onVideoExport, className = '', options, style }, ref) {
+    const parentRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const inputImageFileRef = useRef<HTMLInputElement>(null);
+    const inputJsonFileRef = useRef<HTMLInputElement>(null);
+    const editorRef = useRef<HistoryCanvas | null>(null);
+    const recorderRef = useRef(new CanvasRecorder());
+    const recordOptionsRef = useRef<VideoExportOptions>({ format: 'webm' });
+    const onChangeRef = useRef(onChange);
+    const onVideoExportRef = useRef(onVideoExport);
 
-export function CanvasEditor({ onChange, className, options }: IProps) {
-  const parentRef = useRef<any>();
-  const canvasRef = useRef<any>();
-  const inputImageFileRef = useRef<any>();
-  const inputJsonFileRef = useRef<any>();
+    const { gstate } = useContext(WhiteboardContext);
+    const { canvasOptions, backgroundImage } = gstate;
 
-  const { gstate, setGState } = useContext(WhiteboardContext);
-  const { canvasOptions, backgroundImage } = gstate;
+    const [editor, setEditor] = useState<HistoryCanvas | null>(null);
+    const [activeTool, setActiveTool] = useState<ShapeType>('Select');
+    const [recording, setRecording] = useState(false);
+    const [recordElapsed, setRecordElapsed] = useState(0);
+    const [objOptions, setObjOptions] = useState<ShapeOptions>({
+      stroke: '#000000',
+      fontSize: 22,
+      fill: 'rgba(255, 255, 255, 0.0)',
+      strokeWidth: 3,
+      ...options,
+    });
+    const [colorProp, setColorProp] = useState<'backgroundColor' | 'stroke' | 'fill'>(
+      'backgroundColor'
+    );
+    const [showObjOptions, setShowObjOptions] = useState(false);
+    const [showGrid, setShowGrid] = useState(true);
 
-  const [editor, setEditor] = useState<any>();
+    useEffect(() => {
+      onChangeRef.current = onChange;
+    }, [onChange]);
 
+    useEffect(() => {
+      onVideoExportRef.current = onVideoExport;
+    }, [onVideoExport]);
 
-  const [objOptions, setObjOptions] = useState({
-    stroke: '#000000', fontSize: 22, fill: 'rgba(255, 255, 255, 0.0)', strokeWidth: 3, ...options
-  });
+    useEffect(() => {
+      if (!recording) {
+        setRecordElapsed(0);
+        return;
+      }
+      const started = Date.now();
+      const id = window.setInterval(() => {
+        setRecordElapsed(Math.floor((Date.now() - started) / 1000));
+      }, 250);
+      return () => window.clearInterval(id);
+    }, [recording]);
 
-  const [colorProp, setColorProp] = useState<string>('background')
+    const notifyChange = useCallback(() => {
+      const canvas = editorRef.current;
+      if (canvas && onChangeRef.current) {
+        onChangeRef.current(canvas.toDatalessJSON());
+      }
+    }, []);
 
-  const [showObjOptions, setShowObjOptions] = useState<boolean>(false);
-  const [showGrid, setShowGrid] = useState<boolean>(true);
+    const addShapeToCanvas = useCallback(
+      (type: ShapeType, shapeOptions?: ShapeOptions) => {
+        const canvas = editorRef.current;
+        if (!canvas) return null;
 
-  const canvasModifiedCallback = () => {
-    if (currentCanvas) {
-      onChange(currentCanvas.toDatalessJSON())
-    }
-  };
+        setActiveTool(type);
 
-  useEffect(() => {
-    const canvas = new fabric.Canvas(canvasRef?.current, canvasOptions);
-    currentCanvas = canvas;
-    setEditor(canvas);
+        if (type === 'Select') {
+          canvas.isDrawingMode = false;
+          canvas.discardActiveObject().renderAll();
+          return null;
+        }
 
-    const onKeydown = (e: KeyboardEvent) => {
+        if (type === 'Draw' || type === 'Highlighter') {
+          canvas.isDrawingMode = true;
+          const isHighlighter = type === 'Highlighter';
+          const width = isHighlighter
+            ? Number(localStorage.getItem('highlighter.width') || 18)
+            : Number(localStorage.getItem('freeDrawingBrush.width') || 5);
+          const color = isHighlighter
+            ? localStorage.getItem('highlighter.color') || 'rgba(255, 235, 59, 0.45)'
+            : localStorage.getItem('freeDrawingBrush.color') || '#000000';
+          canvas.freeDrawingBrush.width = width;
+          canvas.freeDrawingBrush.color = color;
+          return null;
+        }
+
+        canvas.isDrawingMode = false;
+        const obj = createShape(type, { ...objOptions, ...shapeOptions });
+        if (!obj) return null;
+
+        canvas.add(obj);
+        canvas.centerObject(obj);
+        canvas.setActiveObject(obj);
+        canvas.renderAll();
+        return obj;
+      },
+      [objOptions]
+    );
+
+    const deleteSelection = useCallback(() => {
+      const canvas = editorRef.current;
       if (!canvas) return;
-
-      if (e.code === 'Delete' || e.keyCode === 46 || e.which === 46) {
-        const activeObject = canvas.getActiveObject();
-        if (activeObject) {
-          canvas.remove(activeObject);
-        }
+      const active = canvas.getActiveObject();
+      if (active) {
+        canvas.remove(active);
+        canvas.discardActiveObject();
+        canvas.renderAll();
       }
+    }, []);
 
-      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 67 || e.which === 67)) {
-        const object = fabric.util.object.clone(canvas.getActiveObject());
-        object.set("top", object.top + 5);
-        object.set("left", object.left + 5);
-        canvas.add(object);
-      }
+    const duplicateSelection = useCallback(() => {
+      const canvas = editorRef.current;
+      if (!canvas) return;
+      const active = canvas.getActiveObject();
+      if (!active) return;
 
-      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 83 || e.which === 83)) {
-        e.preventDefault();
-        localStorage.setItem('whiteboard-cache', JSON.stringify(canvas.toDatalessJSON()))
-      }
-
-      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 79 || e.which === 79)) {
-        e.preventDefault();
-        inputImageFileRef.current.click()
-      }
-
-      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 90 || e.which === 90)) {
-        e.preventDefault();
-        // @ts-ignore: Unreachable code error
-        canvas.undo()
-      }
-
-      if ((e.ctrlKey || e.metaKey) && (e.keyCode === 89 || e.which === 89)) {
-        e.preventDefault();
-        // @ts-ignore: Unreachable code error
-        canvas.redo()
-      }
-    }
-
-    if (parentRef && parentRef.current && canvas) {
-      const data = localStorage.getItem('whiteboard-cache');
-
-      if (data) canvas.loadFromJSON(JSON.parse(data), canvas.renderAll.bind(canvas));
-
-      // canvas.on('mouse:down', function (event) {
-      //   setShowObjOptions(canvas.getActiveObject() ? true : false)
-      // });      
-
-      if (onChange) {
-        canvas.on('object:added', canvasModifiedCallback);
-        canvas.on('object:removed', canvasModifiedCallback);
-        canvas.on('object:modified', canvasModifiedCallback);
-      }
-
-      canvas.setHeight(parentRef.current?.clientHeight || 0);
-      canvas.setWidth(parentRef.current?.clientWidth || 0);
-      canvas.renderAll();
-
-      document.addEventListener('keydown', onKeydown, false);
-    }
-
-    return () => {
-      canvas.off('object:added', canvasModifiedCallback);
-      canvas.off('object:removed', canvasModifiedCallback);
-      canvas.off('object:modified', canvasModifiedCallback);
-
-      //canvas.off('mouse:down');
-      document.removeEventListener('keydown', onKeydown, false);
-      canvas.dispose();
-    }
-  }, []);
-
-  const onToolbar = (objName: string) => {
-    let objType;
-
-    switch (objName) {
-      case 'Select':
-        editor.isDrawingMode = false;
-        editor.discardActiveObject().renderAll();
-        break;
-
-      case 'Draw':
-        if (editor) {
-          editor.isDrawingMode = true;
-          editor.freeDrawingBrush.width = localStorage.getItem('freeDrawingBrush.width') || 5;
-          editor.freeDrawingBrush.color = localStorage.getItem('freeDrawingBrush.color') || '#000000';
-        }
-        break;
-
-      case 'Text':
-        editor.isDrawingMode = false;
-        objType = new fabric.Textbox('Your text here', { fontSize: objOptions.fontSize });
-        break;
-
-      case 'Circle':
-        editor.isDrawingMode = false;
-        objType = new fabric.Circle({ ...objOptions, radius: 70 });
-        break;
-
-      case 'Rect':
-        editor.isDrawingMode = false;
-        objType = new fabric.Rect({ ...objOptions, width: 100, height: 100 });
-        break;
-
-      case 'Triangle':
-        editor.isDrawingMode = false;
-        objType = new fabric.Triangle({ ...objOptions, width: 100, height: 100 });
-        break;
-
-      case 'Arrow':
-        editor.isDrawingMode = false;
-        const triangle = new fabric.Triangle({
-          ...objOptions,
-          width: 10,
-          height: 15,
-          left: 235,
-          top: 65,
-          angle: 90
+      active.clone((cloned: fabric.Object) => {
+        cloned.set({
+          left: (cloned.left || 0) + 20,
+          top: (cloned.top || 0) + 20,
+          evented: true,
         });
-
-        const line = new fabric.Line([50, 100, 200, 100], { ...objOptions, left: 75, top: 70 });
-
-        objType = new fabric.Group([line, triangle]);
-        break;
-
-      case 'Line':
-        editor.isDrawingMode = false;
-        objType = new fabric.Line([50, 10, 200, 150], { ...objOptions, angle: 47 });
-        break;
-
-      case 'Sticky':
-        objType = new fabric.Textbox('Your text here', {
-          ...objOptions,
-          backgroundColor: '#8bc34a',
-          fill: '#fff',
-          width: 150,
-          textAlign: 'left',
-          splitByGrapheme: true,
-          height: 150,
-          padding: 20
-        });
-        break;
-
-      default:
-        break;
-    }
-
-    if (objName !== 'Draw' && objName !== 'Select') {
-      editor.add(objType);
-      editor.centerObject(objType);
-    }
-
-    editor.renderAll();
-  }
-
-  const onBottomMenu = (actionName: string) => {
-    switch (actionName) {
-      case 'Show Object Options':
-        setShowObjOptions(!showObjOptions);
-        break;
-
-      case 'Export':
-        const image = editor.toDataURL("image/png").replace("image/png", "image/octet-stream");
-        window.open(image);
-        break;
-
-      case 'Save':
-        localStorage.setItem('whiteboard-cache', JSON.stringify(editor.toDatalessJSON()))
-        break;
-
-      case 'Erase':
-        const activeObject = editor.getActiveObject();
-        if (activeObject) {
-          editor.remove(activeObject);
-        }
-        break;
-
-      case 'ToJson':
-        const content = JSON.stringify(editor.toDatalessJSON());
-        const link = document.createElement("a");
-        const file = new Blob([content], { type: 'application/json' });
-        link.setAttribute('download', 'whiteboard.json');
-        link.href = URL.createObjectURL(file);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        break;
-
-      case 'Undo':
-        editor.undo()
-        break;
-
-      case 'Redo':
-        editor.redo()
-        break;
-
-      case 'Grid':
-        setShowGrid(!showGrid)
-        break;
-
-      case 'Clear':
-        if (confirm('Are you sure to reset the whiteboard?')) {
-          localStorage.removeItem('whiteboard-cache')
-          editor.clearHistory();
-          editor.clear();
-        }
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  const onFileChange = (e: any) => {
-    console.log(e.target.files.length);
-
-    if (e.target.files.length < 1) return;
-
-    const inputFileName = e.target.name;
-    const file = e.target.files[0];
-    const fileType = file.type;
-    const url = URL.createObjectURL(file);
-
-    if (inputFileName === 'json') {
-      fetch(url).then(r => r.json())
-        .then(json => {
-          editor.loadFromJSON(json, (v: any) => {
-            console.log(v);
+        if (cloned.type === 'activeSelection' && 'canvas' in cloned) {
+          (cloned as fabric.ActiveSelection).canvas = canvas;
+          (cloned as fabric.ActiveSelection).forEachObject((obj) => {
+            canvas.add(obj);
           });
-        });
-    }
-    else {
+          cloned.setCoords();
+        } else {
+          canvas.add(cloned);
+        }
+        canvas.setActiveObject(cloned);
+        canvas.renderAll();
+      });
+    }, []);
 
-      if (fileType === 'image/png' || fileType === 'image/jpeg') {
-        fabric.Image.fromURL(url, function (img) {
-          img.set({ width: 180, height: 180 });
+    const startRecording = useCallback((videoOptions: VideoExportOptions = {}) => {
+      const canvas = editorRef.current;
+      if (!canvas) throw new Error('Canvas is not ready');
+      const opts: VideoExportOptions = { format: 'webm', ...videoOptions };
+      recordOptionsRef.current = opts;
+      recorderRef.current.start(canvas, opts);
+      setRecording(true);
+    }, []);
+
+    const stopRecording = useCallback(async (download = true) => {
+      const blob = await recorderRef.current.stop();
+      setRecording(false);
+      onVideoExportRef.current?.(blob, recordOptionsRef.current);
+      if (download) {
+        const base = recordOptionsRef.current.fileName || `whiteboard-${Date.now()}`;
+        downloadBlob(blob, `${base}.webm`);
+      }
+      return blob;
+    }, []);
+
+    const toVideo = useCallback(async (videoOptions: VideoExportOptions = {}) => {
+      const canvas = editorRef.current;
+      if (!canvas) throw new Error('Canvas is not ready');
+      const blob = await exportCanvasToVideo(canvas, { format: 'webm', ...videoOptions });
+      onVideoExportRef.current?.(blob, { format: 'webm', ...videoOptions });
+      return blob;
+    }, []);
+
+    const downloadVideo = useCallback(async (videoOptions: VideoExportOptions = {}) => {
+      const canvas = editorRef.current;
+      if (!canvas) throw new Error('Canvas is not ready');
+      const blob = await downloadCanvasVideo(canvas, { format: 'webm', ...videoOptions });
+      onVideoExportRef.current?.(blob, { format: 'webm', ...videoOptions });
+      return blob;
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      (): WhiteboardAPI => ({
+        getCanvas: () => editorRef.current,
+        toJSON: () => editorRef.current?.toDatalessJSON() || {},
+        loadJSON: (json) =>
+          new Promise((resolve, reject) => {
+            const canvas = editorRef.current;
+            if (!canvas) {
+              reject(new Error('Canvas is not ready'));
+              return;
+            }
+            const data = typeof json === 'string' ? JSON.parse(json) : json;
+            canvas.loadFromJSON(data, () => {
+              canvas.renderAll();
+              resolve();
+            });
+          }),
+        toDataURL: (format = 'png', quality = 1) =>
+          editorRef.current?.toDataURL({ format, quality }) || '',
+        startRecording,
+        stopRecording,
+        isRecording: () => recorderRef.current.recording,
+        toVideo,
+        downloadVideo,
+        addShape: (type, shapeOptions) => addShapeToCanvas(type, shapeOptions),
+        clear: (confirmClear = true) => {
+          const canvas = editorRef.current;
+          if (!canvas) return;
+          if (confirmClear && !window.confirm('Are you sure to reset the whiteboard?')) {
+            return;
+          }
+          localStorage.removeItem(CACHE_KEY);
+          canvas.clearHistory();
+          canvas.clear();
+        },
+        undo: () => editorRef.current?.undo(),
+        redo: () => editorRef.current?.redo(),
+        setDrawingMode: (enabled, tool = 'Draw') => {
+          if (!enabled) {
+            addShapeToCanvas('Select');
+            return;
+          }
+          addShapeToCanvas(tool);
+        },
+        deleteSelection,
+        duplicateSelection,
+        bringForward: () => {
+          const canvas = editorRef.current;
+          const active = canvas?.getActiveObject();
+          if (canvas && active) {
+            canvas.bringForward(active);
+            canvas.renderAll();
+          }
+        },
+        sendBackward: () => {
+          const canvas = editorRef.current;
+          const active = canvas?.getActiveObject();
+          if (canvas && active) {
+            canvas.sendBackwards(active);
+            canvas.renderAll();
+          }
+        },
+      }),
+      [
+        addShapeToCanvas,
+        deleteSelection,
+        duplicateSelection,
+        downloadVideo,
+        startRecording,
+        stopRecording,
+        toVideo,
+      ]
+    );
+
+    useEffect(() => {
+      if (!canvasRef.current || !parentRef.current) return;
+
+      const canvas = new fabric.Canvas(canvasRef.current, canvasOptions) as HistoryCanvas;
+      editorRef.current = canvas;
+      setEditor(canvas);
+
+      const detachTextEditing = attachShapeTextEditing(canvas);
+
+      const onKeydown = (e: KeyboardEvent) => {
+        if (!editorRef.current) return;
+        const c = editorRef.current;
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+
+        if (e.code === 'Delete' || e.key === 'Delete') {
+          const activeObject = c.getActiveObject();
+          if (activeObject) c.remove(activeObject);
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          duplicateSelection();
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+          const object = c.getActiveObject();
+          if (!object) return;
+          object.clone((cloned: fabric.Object) => {
+            cloned.set({ top: (cloned.top || 0) + 5, left: (cloned.left || 0) + 5 });
+            c.add(cloned);
+            c.setActiveObject(cloned);
+            c.renderAll();
+          });
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          localStorage.setItem(CACHE_KEY, JSON.stringify(c.toDatalessJSON()));
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+          e.preventDefault();
+          inputImageFileRef.current?.click();
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          c.undo();
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          c.redo();
+        }
+      };
+
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        try {
+          canvas.loadFromJSON(JSON.parse(cached), () => canvas.renderAll());
+        } catch {
+          // ignore corrupt cache
+        }
+      }
+
+      canvas.on('object:added', notifyChange);
+      canvas.on('object:removed', notifyChange);
+      canvas.on('object:modified', notifyChange);
+
+      const resizeCanvas = () => {
+        if (!parentRef.current || !editorRef.current) return;
+        const area = parentRef.current.querySelector('.wb-canvas-area') as HTMLElement | null;
+        const height = area?.clientHeight || parentRef.current.clientHeight || 0;
+        const width = area?.clientWidth || parentRef.current.clientWidth || 0;
+        editorRef.current.setHeight(height);
+        editorRef.current.setWidth(width);
+        editorRef.current.renderAll();
+      };
+
+      resizeCanvas();
+      document.addEventListener('keydown', onKeydown);
+      window.addEventListener('resize', resizeCanvas);
+
+      return () => {
+        detachTextEditing();
+        canvas.off('object:added', notifyChange);
+        canvas.off('object:removed', notifyChange);
+        canvas.off('object:modified', notifyChange);
+        document.removeEventListener('keydown', onKeydown);
+        window.removeEventListener('resize', resizeCanvas);
+        if (recorderRef.current.recording) {
+          void recorderRef.current.stop().catch(() => undefined);
+        }
+        editorRef.current = null;
+        canvas.dispose();
+      };
+      // intentional mount-only setup
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const onFooterAction = async (actionName: string) => {
+      if (!editor) return;
+
+      switch (actionName) {
+        case 'Show Object Options':
+          setShowObjOptions((v) => !v);
+          break;
+
+        case 'Export': {
+          const image = editor.toDataURL({ format: 'png' });
+          const link = document.createElement('a');
+          link.href = image;
+          link.download = `whiteboard-${Date.now()}.png`;
+          link.click();
+          break;
+        }
+
+        case 'Save':
+          localStorage.setItem(CACHE_KEY, JSON.stringify(editor.toDatalessJSON()));
+          break;
+
+        case 'Erase':
+          deleteSelection();
+          break;
+
+        case 'Duplicate':
+          duplicateSelection();
+          break;
+
+        case 'ToJson': {
+          const content = JSON.stringify(editor.toDatalessJSON());
+          const link = document.createElement('a');
+          const file = new Blob([content], { type: 'application/json' });
+          link.setAttribute('download', 'whiteboard.json');
+          link.href = URL.createObjectURL(file);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          break;
+        }
+
+        case 'Undo':
+          editor.undo();
+          break;
+
+        case 'Redo':
+          editor.redo();
+          break;
+
+        case 'Grid':
+          setShowGrid((v) => !v);
+          break;
+
+        case 'Clear':
+          if (window.confirm('Are you sure to reset the whiteboard?')) {
+            localStorage.removeItem(CACHE_KEY);
+            editor.clearHistory();
+            editor.clear();
+          }
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    const toggleRecording = async () => {
+      try {
+        if (recording) {
+          await stopRecording(true);
+        } else {
+          startRecording({ format: 'webm' });
+        }
+      } catch (err) {
+        console.error(err);
+        setRecording(false);
+        window.alert('WebM recording failed in this browser.');
+      }
+    };
+
+    const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!editor || !e.target.files || e.target.files.length < 1) return;
+
+      const inputFileName = e.target.name;
+      const file = e.target.files[0];
+      const fileType = file.type;
+      const url = URL.createObjectURL(file);
+
+      if (inputFileName === 'json') {
+        fetch(url)
+          .then((r) => r.json())
+          .then((json) => {
+            editor.loadFromJSON(json, () => editor.renderAll());
+          })
+          .finally(() => URL.revokeObjectURL(url));
+        return;
+      }
+
+      if (fileType === 'image/png' || fileType === 'image/jpeg' || fileType === 'image/gif') {
+        fabric.Image.fromURL(url, (img) => {
+          img.scaleToWidth(180);
           editor.centerObject(img);
           editor.add(img);
+          URL.revokeObjectURL(url);
         });
       }
 
       if (fileType === 'image/svg+xml') {
-        fabric.loadSVGFromURL(url, function (objects, options) {
-          var svg = fabric.util.groupSVGElements(objects, options);
+        fabric.loadSVGFromURL(url, (objects, svgOptions) => {
+          const svg = fabric.util.groupSVGElements(objects, svgOptions);
           svg.scaleToWidth(180);
           svg.scaleToHeight(180);
           editor.centerObject(svg);
           editor.add(svg);
+          URL.revokeObjectURL(url);
         });
       }
-    }
-  }
 
-  const onRadioColor = (e: any) => {
-    setColorProp(e.target.value);
-  }
+      e.target.value = '';
+    };
 
-  const onColorChange = (value: any) => {
-    const activeObj = editor.getActiveObject();
+    const onRadioColor = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setColorProp(e.target.value as 'backgroundColor' | 'stroke' | 'fill');
+    };
 
-    if (editor.isDrawingMode) {
-      editor.freeDrawingBrush.color = value;
-      localStorage.setItem('freeDrawingBrush.color', value);
-    }
-    if (activeObj) {
-      activeObj.set(colorProp, value);
-      const ops = { ...objOptions, [colorProp]: value };
-      setObjOptions(ops);
-      editor.renderAll()
-    }
-    else {
-      if (colorProp === 'backgroundColor') {
-        editor.backgroundColor = value;
-        editor.renderAll()
+    const onColorChange = (value: string) => {
+      if (!editor) return;
+      const activeObj = editor.getActiveObject();
+
+      if (editor.isDrawingMode) {
+        editor.freeDrawingBrush.color = value;
+        localStorage.setItem('freeDrawingBrush.color', value);
+        localStorage.setItem('highlighter.color', value);
       }
-    }
-  }
 
-  const onOptionsChange = (e: any) => {
-    let val = e.target.value;
-    const name = e.target.name;
-    const activeObj = editor.getActiveObject();
+      if (activeObj) {
+        activeObj.set(colorProp, value);
+        setObjOptions((prev) => ({ ...prev, [colorProp]: value }));
+        editor.renderAll();
+        return;
+      }
 
-    if (editor.isDrawingMode && name === 'strokeWidth') {
-      editor.freeDrawingBrush.width = val;
-      localStorage.setItem('freeDrawingBrush.width', val)
-    }
+      if (colorProp === 'backgroundColor') {
+        editor.setBackgroundColor(value, () => editor.renderAll());
+      }
+    };
 
-    if (activeObj) {
-      val = isNaN(val) ? val : +val;
-      activeObj.set(name, val);
+    const onOptionsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!editor) return;
+      let val: string | number = e.target.value;
+      const name = e.target.name;
+      const activeObj = editor.getActiveObject();
 
-      const ops = { ...objOptions, [name]: val };
-      setObjOptions(ops);
-      editor.renderAll()
-    }
-  }
+      if (editor.isDrawingMode && name === 'strokeWidth') {
+        editor.freeDrawingBrush.width = Number(val);
+        localStorage.setItem('freeDrawingBrush.width', String(val));
+        localStorage.setItem('highlighter.width', String(val));
+      }
 
-  const onZoom = (e: any) => {
-    editor.zoomToPoint(new fabric.Point(editor.width / 2, editor.height / 2), +e.target.value);
-    const units = 10;
-    const delta = new fabric.Point(units, 0);
-    editor.relativePan(delta);
+      if (activeObj) {
+        val = isNaN(Number(val)) ? val : Number(val);
+        activeObj.set(name as keyof fabric.Object, val);
+        setObjOptions((prev) => ({ ...prev, [name]: val }));
+        editor.renderAll();
+      }
+    };
 
-    e.preventDefault();
-    e.stopPropagation();
-  }
+    const onZoom = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!editor) return;
+      editor.zoomToPoint(
+        new fabric.Point(editor.getWidth() / 2, editor.getHeight() / 2),
+        Number(e.target.value)
+      );
+      editor.relativePan(new fabric.Point(10, 0));
+    };
 
-  const onLoadImage = () => {
-    inputImageFileRef.current.click();
-  }
+    const formatElapsed = (seconds: number) => {
+      const m = Math.floor(seconds / 60)
+        .toString()
+        .padStart(2, '0');
+      const s = (seconds % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    };
 
-  const onLoadFromJson = () => {
-    inputJsonFileRef.current.click();
-  }
+    return (
+      <div
+        className={'whiteboard ' + className}
+        style={{ backgroundImage: showGrid ? backgroundImage : '', ...style }}
+        ref={parentRef}
+      >
+        <header className="wb-header">
+          <div className="wb-toolbar shadow br-7">
+            {headerTools.map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className={activeTool === item.title ? 'is-active' : ''}
+                onClick={() => addShapeToCanvas(item.title)}
+                title={item.title}
+              >
+                {item.icon}
+              </button>
+            ))}
+            <Dropdown title={<GeometryIcon />}>
+              {geometryTools.map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => addShapeToCanvas(item.title)}
+                  title={item.label}
+                >
+                  {item.icon}
+                </button>
+              ))}
+            </Dropdown>
+            <button
+              type="button"
+              onClick={() => inputImageFileRef.current?.click()}
+              title="Load Image"
+            >
+              <ImageIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => inputJsonFileRef.current?.click()}
+              title="Load From Json"
+            >
+              <JsonIcon />
+            </button>
+          </div>
+        </header>
 
-  return (<div className={'w-100 h-100 whiteboard ' + className}
-    style={{ backgroundImage: showGrid ? backgroundImage : '' }}
-    ref={parentRef}>
+        <div className="wb-canvas-area">
+          {showObjOptions && (
+            <div className="left-menu">
+              <div className="bg-white d-flex align-center justify-between shadow br-7">
+                <label>Font size</label>
+                <input
+                  type="number"
+                  min="1"
+                  name="fontSize"
+                  onChange={onOptionsChange}
+                  defaultValue="22"
+                />
+              </div>
 
-    {showObjOptions && <div className='left-menu'>
-      <div className='bg-white d-flex align-center justify-between shadow br-7'>
-        <label>Font size</label>
-        <input type="number" min="1" name='fontSize' onChange={onOptionsChange} defaultValue="22" />
-      </div>
+              <div className="bg-white d-flex align-center justify-between shadow br-7">
+                <label>Stroke</label>
+                <input
+                  type="number"
+                  min="1"
+                  name="strokeWidth"
+                  onChange={onOptionsChange}
+                  defaultValue="3"
+                />
+              </div>
 
-      <div className='bg-white d-flex align-center justify-between shadow br-7'>
-        <label>Stroke</label>
-        <input type="number" min="1" name='strokeWidth' onChange={onOptionsChange} defaultValue="3" />
-      </div>
+              <div className="bg-white d-flex flex-column shadow br-7">
+                <div className="d-flex align-end mb-10">
+                  <input
+                    className="mr-10"
+                    type="radio"
+                    onChange={onRadioColor}
+                    name="color"
+                    defaultValue="backgroundColor"
+                    defaultChecked
+                  />
+                  <label htmlFor="backgroundColor">background</label>
+                </div>
+                <div className="d-flex align-end mb-10">
+                  <input
+                    className="mr-10"
+                    type="radio"
+                    onChange={onRadioColor}
+                    id="stroke"
+                    name="color"
+                    defaultValue="stroke"
+                  />
+                  <label htmlFor="stroke">stroke</label>
+                </div>
+                <div className="d-flex align-end mb-10">
+                  <input
+                    className="mr-10"
+                    type="radio"
+                    onChange={onRadioColor}
+                    id="fill"
+                    name="color"
+                    defaultValue="fill"
+                  />
+                  <label htmlFor="fill">fill</label>
+                </div>
+                <RgbaStringColorPicker onChange={onColorChange} />
+              </div>
+            </div>
+          )}
 
-      <div className='bg-white d-flex flex-column shadow br-7'>
-        <div className='d-flex align-end mb-10'>
-          <input className='mr-10' type="radio" onChange={onRadioColor} name="color" defaultValue="backgroundColor" />
-          <label htmlFor='backgroundColor'>background</label>
+          <canvas ref={canvasRef} className="canvas" />
         </div>
-        <div className='d-flex align-end mb-10'>
-          <input className='mr-10' type="radio" onChange={onRadioColor} id="stroke" name="color" defaultValue="stroke" />
-          <label htmlFor='stroke'>stroke</label>
-        </div>
 
-        <div className='d-flex align-end mb-10'>
-          <input className='mr-10' type="radio" onChange={onRadioColor} id="fill" name="color" defaultValue="fill" />
-          <label htmlFor='fill'>fill</label>
-        </div>
+        <footer className="wb-footer">
+          <div className="wb-status bg-white br-7 shadow">
+            {recording ? (
+              <span className="wb-rec-live">
+                <span className="wb-rec-dot" />
+                REC {formatElapsed(recordElapsed)}
+              </span>
+            ) : (
+              'whiteboard'
+            )}
+          </div>
 
-        <RgbaStringColorPicker onChange={onColorChange} />
+          <div className="wb-toolbar shadow br-7">
+            {footerTools.map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                onClick={() => {
+                  void onFooterAction(item.title);
+                }}
+                title={item.title}
+              >
+                {item.icon}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={recording ? 'is-recording' : ''}
+              onClick={() => {
+                void toggleRecording();
+              }}
+              title={recording ? 'Stop recording (WebM)' : 'Start recording (WebM)'}
+            >
+              {recording ? <StopIcon /> : <RecordIcon />}
+            </button>
+          </div>
+
+          <select
+            className="wb-zoom bg-white br-7 shadow border-0"
+            onChange={onZoom}
+            defaultValue="1"
+            title="Zoom"
+          >
+            <option value="2">200%</option>
+            <option value="1.5">150%</option>
+            <option value="1">100%</option>
+            <option value="0.75">75%</option>
+            <option value="0.50">50%</option>
+            <option value="0.25">25%</option>
+          </select>
+
+          <input
+            ref={inputImageFileRef}
+            type="file"
+            name="image"
+            onChange={onFileChange}
+            accept="image/svg+xml, image/gif, image/jpeg, image/png"
+            hidden
+          />
+          <input
+            ref={inputJsonFileRef}
+            type="file"
+            name="json"
+            onChange={onFileChange}
+            accept="application/json"
+            hidden
+          />
+        </footer>
       </div>
-    </div>}
-
-    <div className='w-100 d-flex justify-center align-center' style={{ position: 'fixed', top: '10px', left: 0, zIndex: 9999 }}>
-      <div className='bg-white d-flex justify-center align-center shadow br-7'>
-        {toolbar.map(item => <button key={item.title} onClick={() => { onToolbar(item.title) }} title={item.title}>{item.icon}</button>)}
-        <Dropdown title={<GeometryIcon />}>
-          <button onClick={() => { onToolbar('Circle') }} title="Add Circle"><CircleIcon /></button>
-          <button onClick={() => { onToolbar('Rect') }} title="Add Rectangle"><RectIcon /></button>
-          <button onClick={() => { onToolbar('Triangle') }} title="Add Triangle"><TriangleIcon /></button>
-        </Dropdown>
-        <button onClick={() => { onLoadImage() }} title="Load Image"><ImageIcon /></button>
-        <button onClick={() => { onLoadFromJson() }} title="Load From Json"><JsonIcon /></button>
-      </div>
-    </div>
-
-    <canvas ref={canvasRef} className='canvas' />
-
-    <div className='w-100 bottom-menu'>
-      <div className='d-flex align-center bg-white br-7 shadow pr-1 pl-1'>feedback</div>
-
-      <div className='d-flex align-center bg-white br-7 shadow'>
-        {bottomMenu.map(item => <button key={item.title} onClick={() => { onBottomMenu(item.title) }} title={item.title}>{item.icon}</button>)}
-      </div>
-
-      <select className='d-flex align-center bg-white br-7 shadow border-0 pr-1 pl-1' onChange={onZoom} defaultValue="1">
-        <option value="2">200%</option>
-        <option value="1.5">150%</option>
-        <option value="1">100%</option>
-        <option value="0.75">75%</option>
-        <option value="0.50">50%</option>
-        <option value="0.25">25%</option>
-      </select>
-
-      <input ref={inputImageFileRef} type="file" name='image' onChange={onFileChange} accept="image/svg+xml, image/gif, image/jpeg, image/png" hidden />
-      <input ref={inputJsonFileRef} type="file" name='json' onChange={onFileChange} accept="application/json" hidden />
-    </div>
-  </div>)
-}
+    );
+  }
+);

@@ -1,42 +1,47 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 
-interface IProps {
-  title?: any,
-  style?: object
-  children: any,
+interface DropdownProps {
+  title?: ReactNode;
+  style?: CSSProperties;
+  children: ReactNode;
 }
 
-export default function Dropdown({ children, style, title }: IProps) {
-
-  const node = useRef<any>();
-  const [show, setShow] = useState<boolean>(false);
-
-  const clickOutside = (e: any) => {
-    if (node && !node.current.contains(e.target)) {
-      setShow(false);      
-    }
-  }
+export default function Dropdown({ children, style, title }: DropdownProps) {
+  const node = useRef<HTMLDivElement>(null);
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      if (node.current && !node.current.contains(e.target as Node)) {
+        setShow(false);
+      }
+    };
+
     document.addEventListener('mousedown', clickOutside);
     return () => {
       document.removeEventListener('mousedown', clickOutside);
-    }
-  }, [])
+    };
+  }, []);
 
-  return <div className='dropdown' style={{ position: 'relative' }} ref={node}>
-    <button onClick={() => { setShow(!show) }}>{title}</button>
-    <div className='bg-white dropdown-content shadow br-7'
-      style={{
-        position: 'absolute',
-        left: '105%',
-        top: 0,
-        zIndex: 9999,
-        overflow: 'hidden',
-        display: show ? 'block' : 'none',
-        ...style
-      }}>
-      {children}
+  return (
+    <div className="dropdown" style={{ position: 'relative' }} ref={node}>
+      <button type="button" onClick={() => setShow((v) => !v)}>
+        {title}
+      </button>
+      <div
+        className="bg-white dropdown-content shadow br-7"
+        style={{
+          position: 'absolute',
+          left: '105%',
+          top: 0,
+          zIndex: 9999,
+          overflow: 'hidden',
+          display: show ? 'block' : 'none',
+          ...style,
+        }}
+      >
+        {children}
+      </div>
     </div>
-  </div>
+  );
 }

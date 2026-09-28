@@ -1,11 +1,10 @@
 node_modules/
 lib/
-storybook-static
-node_modules
-
+demo-dist/
 .cache
 *.zip
 *.rar
 *.tar
-
 yarn.lock
+.devin
+cache

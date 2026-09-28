@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es6",
+    "target": "ES2019",
     "outDir": "lib",
     "lib": [
       "dom",
@@ -19,12 +19,11 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react",
+    "jsx": "react-jsx",
+    "noEmit": true
   },
   "include": [
-    "src",
-    "src/components/custom.d.ts"
+    "src"
   ],
   "exclude": [
     "node_modules",
