@@ -9,11 +9,12 @@ React whiteboard component powered by [Fabric.js](http://fabricjs.com/). Draw fr
 - Header toolbar: select, pen, highlighter, text, sticky note, arrows, line, geometry shapes, image & JSON import
 - Footer toolbar: object options, grid, erase, duplicate, undo/redo, save, PNG export, JSON export, **WebM record start/stop**, clear, zoom
 - Shapes: circle, ellipse, rectangle, rounded rect, triangle, diamond, star, pentagon, hexagon
+- **Connect shapes**: choose Line / Arrow / Double Arrow, then click shape A → shape B (anchors on edges; links follow when you move shapes)
 - **Double-click a shape** to type text inside it
-- Live **WebM** recording (start / stop)
-- Keyboard shortcuts: `Delete`, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Y` redo, `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+S` save, `Ctrl/Cmd+O` open image
+- Live **WebM** recording via a dedicated canvas composite of the Fabric board (start / stop)
+- Keyboard shortcuts: `Delete`, `Esc` cancel connector, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Y` redo, `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+S` save, `Ctrl/Cmd+O` open image
 - Imperative API via `ref`
-- React 18+, TypeScript, Fabric 5.x
+- React 19, TypeScript, Fabric 5.x
 
 ## Installation
 
@@ -21,7 +22,7 @@ React whiteboard component powered by [Fabric.js](http://fabricjs.com/). Draw fr
 npm install whiteboard-react fabric react-colorful
 ```
 
-**Peer dependencies:** `react` / `react-dom` ≥ 18, `fabric` `>=5.3.0 <6`, `react-colorful` ≥ 5.6
+**Peer dependencies:** `react` / `react-dom` ^19, `fabric` `>=5.3.0 <6`, `react-colorful` ≥ 5.6
 
 ## Quick start
 
@@ -107,6 +108,14 @@ const blob = await boardRef.current.stopRecording(); // downloads whiteboard-*.w
 ### Text inside shapes
 
 Double-click any geometry shape to add a centered label and start typing. Double-click again later to edit it.
+
+### Connect shapes with Line / Arrow
+
+1. Select **Line**, **Arrow**, or **Double Arrow** in the header
+2. Click the **first** shape (blue anchor points appear on the edges)
+3. Click the **second** shape — a connector is drawn from edge to edge
+4. Drag either shape — the connector stays attached  
+Press `Esc` to cancel connector mode.
 
 ## Local development
 

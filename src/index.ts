@@ -2,6 +2,11 @@ export { Whiteboard } from './components/Whiteboard';
 export { CanvasEditor } from './components/CanvasEditor';
 export { createShape, GEOMETRY_SHAPES } from './utils/shapes';
 export {
+  createConnectorObject,
+  refreshAllConnectors,
+  isConnectorTool,
+} from './utils/connectors';
+export {
   CanvasRecorder,
   exportCanvasToVideo,
   downloadCanvasVideo,

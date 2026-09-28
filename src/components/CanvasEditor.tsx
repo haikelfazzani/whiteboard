@@ -50,6 +50,19 @@ import {
   exportCanvasToVideo,
 } from '../utils/exportVideo';
 import { attachShapeTextEditing } from '../utils/shapeText';
+import {
+  clearAnchorMarkers,
+  createAnchorMarkers,
+  createConnectorObject,
+  ensureObjectId,
+  getAnchorPoint,
+  getNearestConnectionPoint,
+  isConnectable,
+  isConnector,
+  isConnectorTool,
+  refreshConnectorsForObject,
+  type ConnectorKind,
+} from '../utils/connectors';
 import type {
   ShapeOptions,
   ShapeType,
@@ -58,6 +71,8 @@ import type {
   WhiteboardProps,
 } from '../types';
 import './Whiteboard.css';
+
+const JSON_PROPS = ['data'];
 
 const headerTools: { title: ShapeType; icon: React.ReactNode }[] = [
   { title: 'Select', icon: <HandIcon /> },
@@ -108,12 +123,18 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
     const recordOptionsRef = useRef<VideoExportOptions>({ format: 'webm' });
     const onChangeRef = useRef(onChange);
     const onVideoExportRef = useRef(onVideoExport);
+    const connectRef = useRef<{
+      kind: ConnectorKind | null;
+      from: fabric.Object | null;
+      preview: fabric.Line | null;
+    }>({ kind: null, from: null, preview: null });
 
     const { gstate } = useContext(WhiteboardContext);
     const { canvasOptions, backgroundImage } = gstate;
 
     const [editor, setEditor] = useState<HistoryCanvas | null>(null);
     const [activeTool, setActiveTool] = useState<ShapeType>('Select');
+    const [connectHint, setConnectHint] = useState<string>('');
     const [recording, setRecording] = useState(false);
     const [recordElapsed, setRecordElapsed] = useState(0);
     const [objOptions, setObjOptions] = useState<ShapeOptions>({
@@ -123,6 +144,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       strokeWidth: 3,
       ...options,
     });
+    const objOptionsRef = useRef(objOptions);
     const [colorProp, setColorProp] = useState<'backgroundColor' | 'stroke' | 'fill'>(
       'backgroundColor'
     );
@@ -138,6 +160,10 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
     }, [onVideoExport]);
 
     useEffect(() => {
+      objOptionsRef.current = objOptions;
+    }, [objOptions]);
+
+    useEffect(() => {
       if (!recording) {
         setRecordElapsed(0);
         return;
@@ -149,12 +175,41 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       return () => window.clearInterval(id);
     }, [recording]);
 
+    const resetConnectMode = useCallback((canvas?: HistoryCanvas | null) => {
+      const c = canvas || editorRef.current;
+      if (c) {
+        clearAnchorMarkers(c);
+        if (connectRef.current.preview) {
+          c.remove(connectRef.current.preview);
+        }
+        c.defaultCursor = 'default';
+        c.hoverCursor = 'move';
+        c.selection = true;
+        c.requestRenderAll();
+      }
+      connectRef.current = { kind: null, from: null, preview: null };
+      setConnectHint('');
+    }, []);
+
     const notifyChange = useCallback(() => {
       const canvas = editorRef.current;
       if (canvas && onChangeRef.current) {
-        onChangeRef.current(canvas.toDatalessJSON());
+        onChangeRef.current(canvas.toDatalessJSON(JSON_PROPS));
       }
     }, []);
+
+    const onObjectAdded = useCallback(
+      (e: fabric.IEvent) => {
+        const t = e.target as
+          | (fabric.Object & { excludeFromExport?: boolean; __anchorMarker?: boolean })
+          | undefined;
+        if (!t) return;
+        if (t.excludeFromExport || t.__anchorMarker) return;
+        if (connectRef.current.preview && t === connectRef.current.preview) return;
+        notifyChange();
+      },
+      [notifyChange]
+    );
 
     const addShapeToCanvas = useCallback(
       (type: ShapeType, shapeOptions?: ShapeOptions) => {
@@ -162,6 +217,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         if (!canvas) return null;
 
         setActiveTool(type);
+        resetConnectMode(canvas);
 
         if (type === 'Select') {
           canvas.isDrawingMode = false;
@@ -184,16 +240,29 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         }
 
         canvas.isDrawingMode = false;
+
+        // Line / Arrow / DoubleArrow: click shape → shape to connect points
+        if (isConnectorTool(type)) {
+          canvas.discardActiveObject().renderAll();
+          canvas.defaultCursor = 'crosshair';
+          canvas.hoverCursor = 'crosshair';
+          canvas.selection = false;
+          connectRef.current = { kind: type, from: null, preview: null };
+          setConnectHint(`Click first shape to start ${type}`);
+          return null;
+        }
+
         const obj = createShape(type, { ...objOptions, ...shapeOptions });
         if (!obj) return null;
 
+        ensureObjectId(obj);
         canvas.add(obj);
         canvas.centerObject(obj);
         canvas.setActiveObject(obj);
         canvas.renderAll();
         return obj;
       },
-      [objOptions]
+      [objOptions, resetConnectMode]
     );
 
     const deleteSelection = useCallback(() => {
@@ -273,7 +342,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       ref,
       (): WhiteboardAPI => ({
         getCanvas: () => editorRef.current,
-        toJSON: () => editorRef.current?.toDatalessJSON() || {},
+        toJSON: () => editorRef.current?.toDatalessJSON(JSON_PROPS) || {},
         loadJSON: (json) =>
           new Promise((resolve, reject) => {
             const canvas = editorRef.current;
@@ -283,6 +352,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
             }
             const data = typeof json === 'string' ? JSON.parse(json) : json;
             canvas.loadFromJSON(data, () => {
+              canvas.getObjects().forEach((obj) => ensureObjectId(obj));
               canvas.renderAll();
               resolve();
             });
@@ -382,7 +452,14 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
           e.preventDefault();
-          localStorage.setItem(CACHE_KEY, JSON.stringify(c.toDatalessJSON()));
+          localStorage.setItem(CACHE_KEY, JSON.stringify(c.toDatalessJSON(JSON_PROPS)));
+        }
+
+        if (e.key === 'Escape') {
+          resetConnectMode(c);
+          c.defaultCursor = 'default';
+          c.hoverCursor = 'move';
+          setActiveTool('Select');
         }
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
@@ -404,15 +481,122 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         try {
-          canvas.loadFromJSON(JSON.parse(cached), () => canvas.renderAll());
+          canvas.loadFromJSON(JSON.parse(cached), () => {
+            canvas.getObjects().forEach((obj) => ensureObjectId(obj));
+            canvas.renderAll();
+          });
         } catch {
           // ignore corrupt cache
         }
       }
 
-      canvas.on('object:added', notifyChange);
+      const onObjectMoving = (e: fabric.IEvent) => {
+        if (e.target) refreshConnectorsForObject(canvas, e.target);
+      };
+      const onObjectModified = (e: fabric.IEvent) => {
+        if (e.target) refreshConnectorsForObject(canvas, e.target);
+        notifyChange();
+      };
+
+      const onConnectDown = (opt: fabric.IEvent) => {
+        const state = connectRef.current;
+        if (!state.kind) return;
+
+        const target = opt.target;
+        if (!target || isConnector(target) || !isConnectable(target)) return;
+
+        // Ignore transient anchor markers
+        if ((target as fabric.Object & { __anchorMarker?: boolean }).__anchorMarker) return;
+
+        canvas.discardActiveObject();
+        const pointer = canvas.getPointer(opt.e);
+        ensureObjectId(target);
+
+        if (!state.from) {
+          state.from = target;
+          clearAnchorMarkers(canvas);
+          createAnchorMarkers(target).forEach((m) => canvas.add(m));
+          const start = getNearestConnectionPoint(target, pointer);
+          state.preview = new fabric.Line([start.x, start.y, start.x, start.y], {
+            stroke: (objOptionsRef.current.stroke as string) || '#2196f3',
+            strokeWidth: Number(objOptionsRef.current.strokeWidth) || 2,
+            strokeDashArray: [6, 4],
+            selectable: false,
+            evented: false,
+            excludeFromExport: true,
+          });
+          canvas.add(state.preview);
+          setConnectHint(`Click second shape to finish ${state.kind}`);
+          canvas.requestRenderAll();
+          return;
+        }
+
+        if (state.from === target) return;
+
+        const fromObj = state.from;
+        const toObj = target;
+        const fromCenter = fromObj.getCenterPoint();
+        const toCenter = toObj.getCenterPoint();
+        const fromPt = getAnchorPoint(fromObj, toCenter);
+        const toPt = getAnchorPoint(toObj, fromCenter);
+
+        if (state.preview) {
+          canvas.remove(state.preview);
+          state.preview = null;
+        }
+        clearAnchorMarkers(canvas);
+
+        const connector = createConnectorObject(
+          state.kind,
+          fromPt,
+          toPt,
+          ensureObjectId(fromObj),
+          ensureObjectId(toObj),
+          objOptionsRef.current
+        );
+        canvas.add(connector);
+        canvas.setActiveObject(connector);
+
+        // Stay in connector mode for chaining more links
+        state.from = null;
+        createAnchorMarkers(toObj).forEach((m) => canvas.add(m));
+        setConnectHint(`Click first shape to start ${state.kind} (Esc to cancel)`);
+        canvas.requestRenderAll();
+        notifyChange();
+      };
+
+      const onConnectMove = (opt: fabric.IEvent) => {
+        const state = connectRef.current;
+        if (!state.kind) return;
+
+        const pointer = canvas.getPointer(opt.e);
+
+        if (state.from && state.preview) {
+          const fromPt = getAnchorPoint(state.from, pointer);
+          state.preview.set({ x1: fromPt.x, y1: fromPt.y, x2: pointer.x, y2: pointer.y });
+          state.preview.setCoords();
+        }
+
+        // Show anchors on hovered connectable shape
+        clearAnchorMarkers(canvas);
+        const hovered = opt.target;
+        if (hovered && isConnectable(hovered) && !isConnector(hovered)) {
+          createAnchorMarkers(hovered).forEach((m) => canvas.add(m));
+        }
+        if (state.from) {
+          createAnchorMarkers(state.from).forEach((m) => canvas.add(m));
+        }
+        canvas.requestRenderAll();
+      };
+
+      canvas.on('object:added', onObjectAdded);
       canvas.on('object:removed', notifyChange);
-      canvas.on('object:modified', notifyChange);
+      canvas.on('object:modified', onObjectModified);
+      canvas.on('object:moving', onObjectMoving);
+      canvas.on('object:scaling', onObjectMoving);
+      canvas.on('object:rotating', onObjectMoving);
+      canvas.on('mouse:down', onConnectDown);
+      canvas.on('mouse:move', onConnectMove);
 
       const resizeCanvas = () => {
         if (!parentRef.current || !editorRef.current) return;
@@ -430,9 +614,14 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
       return () => {
         detachTextEditing();
-        canvas.off('object:added', notifyChange);
+        canvas.off('object:added', onObjectAdded);
         canvas.off('object:removed', notifyChange);
-        canvas.off('object:modified', notifyChange);
+        canvas.off('object:modified', onObjectModified);
+        canvas.off('object:moving', onObjectMoving);
+        canvas.off('object:scaling', onObjectMoving);
+        canvas.off('object:rotating', onObjectMoving);
+        canvas.off('mouse:down', onConnectDown);
+        canvas.off('mouse:move', onConnectMove);
         document.removeEventListener('keydown', onKeydown);
         window.removeEventListener('resize', resizeCanvas);
         if (recorderRef.current.recording) {
@@ -463,7 +652,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         }
 
         case 'Save':
-          localStorage.setItem(CACHE_KEY, JSON.stringify(editor.toDatalessJSON()));
+          localStorage.setItem(CACHE_KEY, JSON.stringify(editor.toDatalessJSON(JSON_PROPS)));
           break;
 
         case 'Erase':
@@ -475,7 +664,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
           break;
 
         case 'ToJson': {
-          const content = JSON.stringify(editor.toDatalessJSON());
+          const content = JSON.stringify(editor.toDatalessJSON(JSON_PROPS));
           const link = document.createElement('a');
           const file = new Blob([content], { type: 'application/json' });
           link.setAttribute('download', 'whiteboard.json');
@@ -751,6 +940,8 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
                 <span className="wb-rec-dot" />
                 REC {formatElapsed(recordElapsed)}
               </span>
+            ) : connectHint ? (
+              <span className="wb-connect-hint">{connectHint}</span>
             ) : (
               'whiteboard'
             )}
