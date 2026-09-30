@@ -9,7 +9,7 @@ React whiteboard component powered by [Fabric.js](http://fabricjs.com/). Draw fr
 - Header toolbar: select, pen, highlighter, text, sticky note, arrows, line, geometry shapes, image & JSON import
 - Footer toolbar: object options, grid, erase, duplicate, undo/redo, save, PNG export, JSON export, **WebM record start/stop**, clear, zoom
 - Shapes: circle, ellipse, rectangle, rounded rect, triangle, diamond, star, pentagon, hexagon
-- **Connect shapes**: choose Line / Arrow / Double Arrow, then click shape A → shape B (anchors on edges; links follow when you move shapes)
+- **Connect shapes**: Line / Arrow / Double Arrow — drag to draw (ends snap to shapes) or click shape A → B; bound ends follow when shapes move
 - **Double-click a shape** to type text inside it
 - Live **WebM** recording via a dedicated canvas composite of the Fabric board (start / stop)
 - Keyboard shortcuts: `Delete`, `Esc` cancel connector, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Y` redo, `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+S` save, `Ctrl/Cmd+O` open image
@@ -112,9 +112,10 @@ Double-click any geometry shape to add a centered label and start typing. Double
 ### Connect shapes with Line / Arrow
 
 1. Select **Line**, **Arrow**, or **Double Arrow** in the header
-2. Click the **first** shape (blue anchor points appear on the edges)
-3. Click the **second** shape — a connector is drawn from edge to edge
-4. Drag either shape — the connector stays attached  
+2. **Drag** on the canvas to draw freely — ends snap to nearby shapes when close
+3. Or **click** shape A, then **click** shape B for an edge-to-edge link
+4. After a connector is created, the tool returns to **Select**
+5. Drag either bound shape — the connector stays attached  
 Press `Esc` to cancel connector mode.
 
 ## Local development

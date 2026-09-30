@@ -4,6 +4,7 @@ export { createShape, GEOMETRY_SHAPES } from './utils/shapes';
 export {
   createConnectorObject,
   refreshAllConnectors,
+  hydrateConnectors,
   isConnectorTool,
 } from './utils/connectors';
 export {
