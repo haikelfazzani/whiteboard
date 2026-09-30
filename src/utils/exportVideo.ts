@@ -1,4 +1,4 @@
-import type { fabric } from 'fabric';
+import type { fabric } from '../components/FabricExtended';
 import type { VideoExportOptions } from '../types';
 
 const WEBM_CANDIDATES = [

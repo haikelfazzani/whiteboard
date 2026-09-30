@@ -43,6 +43,13 @@
   width: 100%;
 }
 
+.wb-canvas-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .wb-canvas-area .canvas-container {
   width: 100% !important;
   height: 100% !important;

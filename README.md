@@ -9,7 +9,7 @@ React whiteboard component powered by [Fabric.js](http://fabricjs.com/). Draw fr
 - Header toolbar: select, pen, highlighter, text, sticky note, arrows, line, geometry shapes, image & JSON import
 - Footer toolbar: object options, grid, erase, duplicate, undo/redo, save, PNG export, JSON export, **WebM record start/stop**, clear, zoom
 - Shapes: circle, ellipse, rectangle, rounded rect, triangle, diamond, star, pentagon, hexagon
-- **Connect shapes**: Line / Arrow / Double Arrow — drag to draw (ends snap to shapes) or click shape A → B; bound ends follow when shapes move
+- **Connect shapes**: Line / Arrow / Double Arrow — drag between shapes (or click A then B). Select a connector to drag its endpoints; bound ends follow shapes when moved
 - **Double-click a shape** to type text inside it
 - Live **WebM** recording via a dedicated canvas composite of the Fabric board (start / stop)
 - Keyboard shortcuts: `Delete`, `Esc` cancel connector, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Y` redo, `Ctrl/Cmd+D` duplicate, `Ctrl/Cmd+S` save, `Ctrl/Cmd+O` open image
@@ -112,10 +112,11 @@ Double-click any geometry shape to add a centered label and start typing. Double
 ### Connect shapes with Line / Arrow
 
 1. Select **Line**, **Arrow**, or **Double Arrow** in the header
-2. **Drag** on the canvas to draw freely — ends snap to nearby shapes when close
-3. Or **click** shape A, then **click** shape B for an edge-to-edge link
-4. After a connector is created, the tool returns to **Select**
-5. Drag either bound shape — the connector stays attached  
+2. **Drag** from one shape to another (or across empty canvas — ends snap when close to a shape)
+3. Or **click** shape A, then **click** shape B
+4. The tool returns to **Select** and blue **endpoint dots** appear — drag them to change attach points (release near a shape to re-bind)
+5. Add another Line/Arrow between the **same** shapes — connectors fan out side-by-side instead of stacking
+6. Move a bound shape — connectors stay attached at their chosen edge points  
 Press `Esc` to cancel connector mode.
 
 ## Local development

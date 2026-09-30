@@ -51,20 +51,33 @@ import {
 } from '../utils/exportVideo';
 import { attachShapeTextEditing } from '../utils/shapeText';
 import {
+  buildConnectedEndpoints,
   clearAnchorMarkers,
+  clearEndpointHandles,
+  collectObjectIds,
+  commitConnectorHandle,
   createAnchorMarkers,
   createConnectorObject,
-  DRAG_THRESHOLD,
+  clearSnapGlow,
+  detachConnectorsForDeleted,
+  dirFromAttach,
+  dragThreshold,
   ensureObjectId,
-  findNearestConnectable,
   getAnchorPoint,
   getNearestConnectionPoint,
+  hitConnectable,
   hydrateConnectors,
-  isConnectable,
+  applyConnectorCanvasDefaults,
   isConnector,
   isConnectorTool,
+  isEndpointHandle,
+  moveConnectorByHandle,
   refreshConnectorsForObject,
-  SNAP_DISTANCE,
+  refreshAllConnectors,
+  sendConnectorBehindTargets,
+  setSnapGlow,
+  showEndpointHandles,
+  syncEndpointHandles,
   type ConnectorKind,
 } from '../utils/connectors';
 import type { Point } from '../utils/connectors';
@@ -120,7 +133,7 @@ const CACHE_KEY = 'whiteboard-cache';
 export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
   function CanvasEditor({ onChange, onVideoExport, className = '', options, style }, ref) {
     const parentRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const canvasHostRef = useRef<HTMLDivElement>(null);
     const inputImageFileRef = useRef<HTMLInputElement>(null);
     const inputJsonFileRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<HistoryCanvas | null>(null);
@@ -195,17 +208,30 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
     }, [recording]);
 
     const resetConnectMode = useCallback((canvas?: HistoryCanvas | null) => {
-      const c = canvas || editorRef.current;
-      if (c) {
-        clearAnchorMarkers(c);
-        if (connectRef.current.preview) {
-          c.remove(connectRef.current.preview);
-        }
-        c.defaultCursor = 'default';
-        c.hoverCursor = 'move';
-        c.selection = true;
-        c.requestRenderAll();
+      const c = (canvas || editorRef.current) ?? null;
+      if (!c) {
+        connectRef.current = {
+          kind: null,
+          from: null,
+          fromPoint: null,
+          preview: null,
+          pointerDown: false,
+          didDrag: false,
+          downPointer: null,
+          downTarget: null,
+        };
+        setConnectHint('');
+        return;
       }
+      clearAnchorMarkers(c);
+      clearSnapGlow(c);
+      if (connectRef.current.preview) {
+        c.remove(connectRef.current.preview);
+      }
+      c.defaultCursor = 'default';
+      c.hoverCursor = 'move';
+      c.selection = true;
+      c.requestRenderAll();
       connectRef.current = {
         kind: null,
         from: null,
@@ -249,7 +275,8 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
         if (type === 'Select') {
           canvas.isDrawingMode = false;
-          canvas.discardActiveObject().renderAll();
+          canvas.discardActiveObject();
+          canvas.renderAll();
           return null;
         }
 
@@ -262,8 +289,10 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
           const color = isHighlighter
             ? localStorage.getItem('highlighter.color') || 'rgba(255, 235, 59, 0.45)'
             : localStorage.getItem('freeDrawingBrush.color') || '#000000';
-          canvas.freeDrawingBrush.width = width;
-          canvas.freeDrawingBrush.color = color;
+          if (canvas.freeDrawingBrush) {
+            canvas.freeDrawingBrush.width = width;
+            canvas.freeDrawingBrush.color = color;
+          }
           return null;
         }
 
@@ -271,7 +300,8 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
         // Line / Arrow / DoubleArrow: drag to draw, or click shape → shape
         if (isConnectorTool(type)) {
-          canvas.discardActiveObject().renderAll();
+          canvas.discardActiveObject();
+          canvas.renderAll();
           canvas.defaultCursor = 'crosshair';
           canvas.hoverCursor = 'crosshair';
           canvas.selection = false;
@@ -306,11 +336,29 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       const canvas = editorRef.current;
       if (!canvas) return;
       const active = canvas.getActiveObject();
-      if (active) {
-        canvas.remove(active);
+      if (!active) return;
+
+      // Never delete ephemeral endpoint handles via Delete — clear selection instead
+      if (isEndpointHandle(active)) {
+        clearEndpointHandles(canvas);
         canvas.discardActiveObject();
-        canvas.renderAll();
+        canvas.requestRenderAll();
+        return;
       }
+
+      const deletedIds = collectObjectIds(active);
+      clearEndpointHandles(canvas);
+
+      if (active.type === 'activeSelection') {
+        const sel = active as fabric.ActiveSelection;
+        sel.forEachObject((obj: fabric.Object) => canvas.remove(obj));
+      } else {
+        canvas.remove(active);
+      }
+
+      detachConnectorsForDeleted(canvas, deletedIds, { removeOrphans: false });
+      canvas.discardActiveObject();
+      canvas.requestRenderAll();
     }, []);
 
     const duplicateSelection = useCallback(() => {
@@ -319,7 +367,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       const active = canvas.getActiveObject();
       if (!active) return;
 
-      active.clone((cloned: fabric.Object) => {
+      void active.clone().then((cloned: fabric.Object) => {
         cloned.set({
           left: (cloned.left || 0) + 20,
           top: (cloned.top || 0) + 20,
@@ -327,7 +375,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         });
         if (cloned.type === 'activeSelection' && 'canvas' in cloned) {
           (cloned as fabric.ActiveSelection).canvas = canvas;
-          (cloned as fabric.ActiveSelection).forEachObject((obj) => {
+          (cloned as fabric.ActiveSelection).forEachObject((obj: fabric.Object) => {
             canvas.add(obj);
           });
           cloned.setCoords();
@@ -389,14 +437,14 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
             }
             const data = typeof json === 'string' ? JSON.parse(json) : json;
             canvas.loadFromJSON(data, () => {
-              canvas.getObjects().forEach((obj) => ensureObjectId(obj));
+              canvas.getObjects().forEach((obj: fabric.Object) => ensureObjectId(obj));
               hydrateConnectors(canvas);
               canvas.renderAll();
               resolve();
             });
           }),
         toDataURL: (format = 'png', quality = 1) =>
-          editorRef.current?.toDataURL({ format, quality }) || '',
+          editorRef.current?.toDataURL({ format: format as 'png', quality, multiplier: 1 }) || '',
         startRecording,
         stopRecording,
         isRecording: () => recorderRef.current.recording,
@@ -453,11 +501,18 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
     );
 
     useEffect(() => {
-      if (!canvasRef.current || !parentRef.current) return;
+      if (!canvasHostRef.current || !parentRef.current) return;
 
-      const canvas = new fabric.Canvas(canvasRef.current, canvasOptions) as HistoryCanvas;
+      // Create the <canvas> imperatively so React never reconciles Fabric's wrapper DOM.
+      const lowerCanvas = document.createElement('canvas');
+      lowerCanvas.className = 'canvas';
+      canvasHostRef.current.innerHTML = '';
+      canvasHostRef.current.appendChild(lowerCanvas);
+
+      const canvas = new fabric.Canvas(lowerCanvas, canvasOptions) as HistoryCanvas;
       editorRef.current = canvas;
       setEditor(canvas);
+      applyConnectorCanvasDefaults(canvas);
 
       const detachTextEditing = attachShapeTextEditing(canvas);
 
@@ -467,9 +522,10 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
 
-        if (e.code === 'Delete' || e.key === 'Delete') {
-          const activeObject = c.getActiveObject();
-          if (activeObject) c.remove(activeObject);
+        if (e.code === 'Delete' || e.key === 'Delete' || e.key === 'Backspace') {
+          // Avoid hijacking backspace while typing in textboxes (already guarded above)
+          e.preventDefault();
+          deleteSelection();
         }
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
@@ -480,7 +536,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
           const object = c.getActiveObject();
           if (!object) return;
-          object.clone((cloned: fabric.Object) => {
+          void object.clone().then((cloned: fabric.Object) => {
             cloned.set({ top: (cloned.top || 0) + 5, left: (cloned.left || 0) + 5 });
             c.add(cloned);
             c.setActiveObject(cloned);
@@ -520,7 +576,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       if (cached) {
         try {
           canvas.loadFromJSON(JSON.parse(cached), () => {
-            canvas.getObjects().forEach((obj) => ensureObjectId(obj));
+            canvas.getObjects().forEach((obj: fabric.Object) => ensureObjectId(obj));
             hydrateConnectors(canvas);
             canvas.renderAll();
           });
@@ -545,95 +601,193 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
         const dx = toPt.x - fromPt.x;
         const dy = toPt.y - fromPt.y;
-        if (dx * dx + dy * dy < 4) {
-          resetConnectMode(canvas);
-          setActiveTool('Select');
+        if (dx * dx + dy * dy < 16) {
+          s.from = null;
+          s.fromPoint = null;
+          s.pointerDown = false;
+          s.didDrag = false;
+          s.downPointer = null;
+          s.downTarget = null;
+          setConnectHint(`Drag to draw ${kind}, or click two shapes (Esc to cancel)`);
+          canvas.requestRenderAll();
           return;
         }
 
-        const fromId = fromObj ? ensureObjectId(fromObj) : null;
-        const toId = toObj ? ensureObjectId(toObj) : null;
+        let connector: fabric.Line;
 
-        let start = fromPt;
-        let end = toPt;
-        if (fromObj && toObj) {
-          const fromCenter = fromObj.getCenterPoint();
-          const toCenter = toObj.getCenterPoint();
-          start = getAnchorPoint(fromObj, toCenter);
-          end = getAnchorPoint(toObj, fromCenter);
-        } else if (fromObj) {
-          start = getAnchorPoint(fromObj, toPt);
-        } else if (toObj) {
-          end = getAnchorPoint(toObj, fromPt);
+        if (fromObj && toObj && toObj !== fromObj) {
+          const built = buildConnectedEndpoints(canvas, fromObj, toObj, fromPt, toPt);
+          connector = createConnectorObject(
+            kind,
+            built.from,
+            built.to,
+            built.fromId,
+            built.toId,
+            objOptionsRef.current,
+            built.fromDir,
+            built.toDir
+          );
+        } else {
+          const fromId = fromObj ? ensureObjectId(fromObj) : null;
+          const toId = toObj && toObj !== fromObj ? ensureObjectId(toObj) : null;
+          let start = fromPt;
+          let end = toPt;
+          let fromDir: Point | null = null;
+          let toDir: Point | null = null;
+
+          if (fromObj) {
+            start = getNearestConnectionPoint(fromObj, toPt);
+            fromDir = dirFromAttach(fromObj, start);
+          }
+          if (toObj && toObj !== fromObj) {
+            end = getNearestConnectionPoint(toObj, fromPt);
+            toDir = dirFromAttach(toObj, end);
+          }
+
+          connector = createConnectorObject(
+            kind,
+            start,
+            end,
+            fromId,
+            toId,
+            objOptionsRef.current,
+            fromDir,
+            toDir
+          );
         }
 
-        const connector = createConnectorObject(
-          kind,
-          start,
-          end,
-          fromId,
-          toId,
-          objOptionsRef.current
-        );
+        clearEndpointHandles(canvas);
         canvas.add(connector);
-        canvas.setActiveObject(connector);
-        canvas.requestRenderAll();
+        sendConnectorBehindTargets(canvas, connector);
+        if (fromObj && toObj && toObj !== fromObj) {
+          refreshAllConnectors(canvas);
+          sendConnectorBehindTargets(canvas, connector);
+        }
         notifyChange();
 
         resetConnectMode(canvas);
         setActiveTool('Select');
+        canvas.setActiveObject(connector);
+        showEndpointHandles(canvas, connector);
+        canvas.requestRenderAll();
       };
 
       const onObjectMoving = (e: fabric.IEvent) => {
-        if (e.target) refreshConnectorsForObject(canvas, e.target);
+        const target = e.target;
+        if (!target) return;
+        if (isEndpointHandle(target)) {
+          moveConnectorByHandle(target);
+          return;
+        }
+        // Covers single shapes and ActiveSelection (multi-drag)
+        refreshConnectorsForObject(canvas, target);
+        const active = canvas.getActiveObject();
+        if (active && isConnector(active)) {
+          syncEndpointHandles(canvas, active);
+        }
       };
+
       const onObjectModified = (e: fabric.IEvent) => {
-        if (e.target) refreshConnectorsForObject(canvas, e.target);
+        const target = e.target;
+        if (target) {
+          if (isEndpointHandle(target)) {
+            commitConnectorHandle(canvas, target);
+          } else if (isConnector(target)) {
+            sendConnectorBehindTargets(canvas, target);
+          } else {
+            refreshConnectorsForObject(canvas, target);
+            const active = canvas.getActiveObject();
+            if (active && isConnector(active)) {
+              syncEndpointHandles(canvas, active);
+            }
+          }
+        }
         notifyChange();
       };
 
+      const onSelectionChange = () => {
+        const active = canvas.getActiveObject();
+
+        // Strip endpoint handles out of multi-selections (marquee / shift-click)
+        if (active && active.type === 'activeSelection') {
+          const sel = active as fabric.ActiveSelection;
+          const kept: fabric.Object[] = [];
+          let removedHandle = false;
+          sel.forEachObject((obj: fabric.Object) => {
+            if (isEndpointHandle(obj)) {
+              removedHandle = true;
+            } else {
+              kept.push(obj);
+            }
+          });
+          if (removedHandle) {
+            canvas.discardActiveObject();
+            if (kept.length === 1) {
+              canvas.setActiveObject(kept[0]);
+            } else if (kept.length > 1) {
+              const next = new fabric.ActiveSelection(kept, { canvas });
+              canvas.setActiveObject(next);
+            }
+            clearEndpointHandles(canvas);
+            canvas.requestRenderAll();
+            return;
+          }
+          clearEndpointHandles(canvas);
+          return;
+        }
+
+        if (active && isEndpointHandle(active)) {
+          // Keep handle drag; do not recreate sibling handles
+          return;
+        }
+        if (active && isConnector(active)) {
+          showEndpointHandles(canvas, active);
+        } else {
+          clearEndpointHandles(canvas);
+        }
+      };
+
       const onConnectDown = (opt: fabric.IEvent) => {
-        if (!connectRef.current.kind) return;
+        const s = connectRef.current;
+        if (!s.kind) return;
+
+        // Don't steal events when editing an existing connector / handle
+        if (opt.target && (isConnector(opt.target) || isEndpointHandle(opt.target))) return;
 
         const pointer = canvas.getPointer(opt.e);
-        let target = opt.target as fabric.Object | undefined;
-        if (target && (target as fabric.Object & { __anchorMarker?: boolean }).__anchorMarker) {
-          target = undefined;
-        }
-        if (target && (isConnector(target) || !isConnectable(target))) {
-          target = undefined;
-        }
+        const target = hitConnectable(canvas, pointer);
 
         canvas.discardActiveObject();
-
-        const s = connectRef.current;
+        clearEndpointHandles(canvas);
         s.pointerDown = true;
         s.didDrag = false;
-        s.downPointer = pointer;
-        s.downTarget = target || null;
+        s.downPointer = { ...pointer };
+        s.downTarget = target;
 
-        // Second click on another shape → finish immediately
+        // Second shape click → finish
         if (s.from && target && target !== s.from) {
           finishConnector(
-            s.kind!,
+            s.kind,
             s.fromPoint || getAnchorPoint(s.from, pointer),
-            pointer,
+            getNearestConnectionPoint(target, pointer),
             s.from,
             target
           );
           return;
         }
 
-        // Start (or restart) a connector from this point / shape
+        // Begin a new connector (shape or free)
         if (!s.from) {
-          const fromObj = target || findNearestConnectable(canvas, pointer, SNAP_DISTANCE);
-          const fromPt = fromObj ? getNearestConnectionPoint(fromObj, pointer) : { ...pointer };
+          const fromObj = target;
+          const fromPt = fromObj
+            ? getNearestConnectionPoint(fromObj, pointer)
+            : { ...pointer };
           s.from = fromObj;
           s.fromPoint = fromPt;
 
           if (s.preview) canvas.remove(s.preview);
           clearAnchorMarkers(canvas);
-          s.preview = new fabric.Line([fromPt.x, fromPt.y, fromPt.x, fromPt.y], {
+          const preview = new fabric.Line([fromPt.x, fromPt.y, fromPt.x, fromPt.y], {
             stroke: (objOptionsRef.current.stroke as string) || '#2196f3',
             strokeWidth: Number(objOptionsRef.current.strokeWidth) || 2,
             strokeDashArray: [6, 4],
@@ -641,10 +795,11 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
             evented: false,
             excludeFromExport: true,
           });
-          canvas.add(s.preview);
+          s.preview = preview;
+          canvas.add(preview);
           if (fromObj) {
             createAnchorMarkers(fromObj).forEach((m) => canvas.add(m));
-            setConnectHint(`Drag to another shape, or click the second shape`);
+            setConnectHint('Drag to another shape, or click the second shape');
           } else {
             setConnectHint(`Drag to draw ${s.kind}`);
           }
@@ -661,7 +816,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         if (s.pointerDown && s.downPointer) {
           const dx = pointer.x - s.downPointer.x;
           const dy = pointer.y - s.downPointer.y;
-          if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+          if (dx * dx + dy * dy > dragThreshold(canvas) ** 2) {
             s.didDrag = true;
           }
         }
@@ -674,12 +829,12 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         }
 
         clearAnchorMarkers(canvas);
-        const hovered =
-          (opt.target && isConnectable(opt.target) && !isConnector(opt.target)
-            ? opt.target
-            : null) || findNearestConnectable(canvas, pointer, SNAP_DISTANCE);
+        const hovered = hitConnectable(canvas, pointer);
         if (hovered) {
           createAnchorMarkers(hovered).forEach((m) => canvas.add(m));
+          setSnapGlow(canvas, hovered);
+        } else {
+          clearSnapGlow(canvas);
         }
         if (s.from && s.from !== hovered) {
           createAnchorMarkers(s.from).forEach((m) => canvas.add(m));
@@ -693,43 +848,53 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
         s.pointerDown = false;
 
         const pointer = canvas.getPointer(opt.e);
+        // Fresh hit at release point — do NOT trust opt.target after a drag
+        const target = hitConnectable(canvas, pointer, s.from);
 
         if (s.didDrag && s.fromPoint) {
-          let toTarget =
-            (opt.target && isConnectable(opt.target) && !isConnector(opt.target)
-              ? opt.target
-              : null) || findNearestConnectable(canvas, pointer, SNAP_DISTANCE);
-          if (toTarget && toTarget === s.from) toTarget = null;
-
-          const toPt = toTarget ? getNearestConnectionPoint(toTarget, pointer) : pointer;
-          finishConnector(s.kind, s.fromPoint, toPt, s.from, toTarget);
+          const toPt = target ? getNearestConnectionPoint(target, pointer) : pointer;
+          finishConnector(s.kind, s.fromPoint, toPt, s.from, target);
           return;
         }
 
-        // Click without drag: keep first shape selected for click-click flow
-        if (s.downTarget && s.from === s.downTarget) {
+        // Pure click on first shape → wait for second click
+        if (s.downTarget && s.from && s.from === s.downTarget) {
           setConnectHint(`Click second shape to finish ${s.kind} (Esc to cancel)`);
           return;
         }
 
-        // Click on empty canvas with no drag — stay ready / ignore
-        if (!s.from) {
+        // Click on empty canvas without drag → abort start
+        if (!s.downTarget && !s.didDrag) {
           if (s.preview) {
             canvas.remove(s.preview);
             s.preview = null;
           }
+          s.from = null;
+          s.fromPoint = null;
+          clearAnchorMarkers(canvas);
+          setConnectHint(`Drag to draw ${s.kind}, or click two shapes (Esc to cancel)`);
+          canvas.requestRenderAll();
         }
       };
 
-      canvas.on('object:added', onObjectAdded);
-      canvas.on('object:removed', notifyChange);
-      canvas.on('object:modified', onObjectModified);
-      canvas.on('object:moving', onObjectMoving);
-      canvas.on('object:scaling', onObjectMoving);
-      canvas.on('object:rotating', onObjectMoving);
-      canvas.on('mouse:down', onConnectDown);
-      canvas.on('mouse:move', onConnectMove);
-      canvas.on('mouse:up', onConnectUp);
+      canvas.on('object:added', onObjectAdded as never);
+      canvas.on('object:removed', notifyChange as never);
+      canvas.on('object:modified', onObjectModified as never);
+      canvas.on('object:moving', onObjectMoving as never);
+      canvas.on('object:scaling', onObjectMoving as never);
+      canvas.on('object:rotating', onObjectMoving as never);
+      canvas.on('selection:created', onSelectionChange as never);
+      canvas.on('selection:updated', onSelectionChange as never);
+      canvas.on('selection:cleared', onSelectionChange as never);
+      canvas.on('mouse:down', onConnectDown as never);
+      canvas.on('mouse:move', onConnectMove as never);
+      canvas.on('mouse:up', onConnectUp as never);
+
+      const onHistoryLoaded = () => {
+        clearEndpointHandles(canvas);
+        hydrateConnectors(canvas);
+      };
+      canvas.on('history:loaded' as never, onHistoryLoaded);
 
       const resizeCanvas = () => {
         if (!parentRef.current || !editorRef.current) return;
@@ -747,22 +912,30 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
 
       return () => {
         detachTextEditing();
-        canvas.off('object:added', onObjectAdded);
-        canvas.off('object:removed', notifyChange);
-        canvas.off('object:modified', onObjectModified);
-        canvas.off('object:moving', onObjectMoving);
-        canvas.off('object:scaling', onObjectMoving);
-        canvas.off('object:rotating', onObjectMoving);
-        canvas.off('mouse:down', onConnectDown);
-        canvas.off('mouse:move', onConnectMove);
-        canvas.off('mouse:up', onConnectUp);
+        canvas.off('object:added', onObjectAdded as never);
+        canvas.off('object:removed', notifyChange as never);
+        canvas.off('object:modified', onObjectModified as never);
+        canvas.off('object:moving', onObjectMoving as never);
+        canvas.off('object:scaling', onObjectMoving as never);
+        canvas.off('object:rotating', onObjectMoving as never);
+        canvas.off('selection:created', onSelectionChange as never);
+        canvas.off('selection:updated', onSelectionChange as never);
+        canvas.off('selection:cleared', onSelectionChange as never);
+        canvas.off('mouse:down', onConnectDown as never);
+        canvas.off('mouse:move', onConnectMove as never);
+        canvas.off('mouse:up', onConnectUp as never);
+        canvas.off('history:loaded' as never, onHistoryLoaded);
         document.removeEventListener('keydown', onKeydown);
         window.removeEventListener('resize', resizeCanvas);
         if (recorderRef.current.recording) {
           void recorderRef.current.stop().catch(() => undefined);
         }
         editorRef.current = null;
+        setEditor(null);
         canvas.dispose();
+        if (canvasHostRef.current) {
+          canvasHostRef.current.innerHTML = '';
+        }
       };
       // intentional mount-only setup
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -777,7 +950,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
           break;
 
         case 'Export': {
-          const image = editor.toDataURL({ format: 'png' });
+          const image = editor.toDataURL({ format: 'png', multiplier: 1 });
           const link = document.createElement('a');
           link.href = image;
           link.download = `whiteboard-${Date.now()}.png`;
@@ -870,7 +1043,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       }
 
       if (fileType === 'image/png' || fileType === 'image/jpeg' || fileType === 'image/gif') {
-        fabric.Image.fromURL(url, (img) => {
+        void fabric.Image.fromURL(url, (img: fabric.Image) => {
           img.scaleToWidth(180);
           editor.centerObject(img);
           editor.add(img);
@@ -879,7 +1052,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       }
 
       if (fileType === 'image/svg+xml') {
-        fabric.loadSVGFromURL(url, (objects, svgOptions) => {
+        void fabric.loadSVGFromURL(url, (objects: fabric.Object[], svgOptions: Record<string, unknown>) => {
           const svg = fabric.util.groupSVGElements(objects, svgOptions);
           svg.scaleToWidth(180);
           svg.scaleToHeight(180);
@@ -900,7 +1073,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       if (!editor) return;
       const activeObj = editor.getActiveObject();
 
-      if (editor.isDrawingMode) {
+      if (editor.isDrawingMode && editor.freeDrawingBrush) {
         editor.freeDrawingBrush.color = value;
         localStorage.setItem('freeDrawingBrush.color', value);
         localStorage.setItem('highlighter.color', value);
@@ -924,7 +1097,7 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
       const name = e.target.name;
       const activeObj = editor.getActiveObject();
 
-      if (editor.isDrawingMode && name === 'strokeWidth') {
+      if (editor.isDrawingMode && name === 'strokeWidth' && editor.freeDrawingBrush) {
         editor.freeDrawingBrush.width = Number(val);
         localStorage.setItem('freeDrawingBrush.width', String(val));
         localStorage.setItem('highlighter.width', String(val));
@@ -1067,7 +1240,8 @@ export const CanvasEditor = forwardRef<WhiteboardAPI, WhiteboardProps>(
             </div>
           )}
 
-          <canvas ref={canvasRef} className="canvas" />
+          {/* Host only — React must not manage the Fabric <canvas> node */}
+          <div className="wb-canvas-host" ref={canvasHostRef} />
         </div>
 
         <footer className="wb-footer">

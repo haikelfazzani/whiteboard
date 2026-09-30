@@ -1,5 +1,5 @@
 import type { ReactNode, CSSProperties } from 'react';
-import type { fabric } from 'fabric';
+import type { fabric } from './components/FabricExtended';
 
 export type ShapeType =
   | 'Select'
